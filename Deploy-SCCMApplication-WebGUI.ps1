@@ -89,35 +89,39 @@ function Get-HTMLPage {
         }
 
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: "Segoe UI", Arial, sans-serif;
+            background-color: #f5f7f8;
+            color: #2d2d2d;
             min-height: 100vh;
             padding: 20px;
+            line-height: 1.6;
         }
 
         .container {
-            max-width: 1200px;
+            max-width: 1100px;
             margin: 0 auto;
             background: white;
-            border-radius: 12px;
-            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            border-radius: 8px;
+            box-shadow: 0px 2px 6px rgba(0,0,0,0.08);
             overflow: hidden;
         }
 
         .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background-color: #00594c;
             color: white;
-            padding: 30px;
+            padding: 40px 20px;
             text-align: center;
         }
 
         .header h1 {
             font-size: 28px;
             margin-bottom: 10px;
+            color: white;
+            font-weight: 600;
         }
 
         .header p {
-            opacity: 0.9;
+            opacity: 0.95;
             font-size: 14px;
         }
 
@@ -135,18 +139,18 @@ function Get-HTMLPage {
             background: #f5f5f5;
             border: none;
             font-size: 16px;
-            transition: all 0.3s;
+            transition: all 0.2s ease;
+            font-weight: 600;
         }
 
         .tab:hover {
-            background: #e0e0e0;
+            background: #e7f4f1;
         }
 
         .tab.active {
             background: white;
-            border-bottom: 3px solid #667eea;
-            font-weight: bold;
-            color: #667eea;
+            border-bottom: 3px solid #008361;
+            color: #00594c;
         }
 
         .tab-content {
@@ -190,7 +194,7 @@ function Get-HTMLPage {
         .form-group select:focus,
         .form-group textarea:focus {
             outline: none;
-            border-color: #667eea;
+            border-color: #008361;
         }
 
         .form-row {
@@ -214,12 +218,13 @@ function Get-HTMLPage {
             border-radius: 8px;
             padding: 20px;
             margin-bottom: 20px;
+            background: white;
         }
 
         .fieldset legend {
             padding: 0 10px;
-            font-weight: bold;
-            color: #667eea;
+            font-weight: 600;
+            color: #00594c;
         }
 
         .actions {
@@ -227,19 +232,19 @@ function Get-HTMLPage {
             gap: 15px;
             justify-content: center;
             padding: 30px;
-            background: #f9f9f9;
+            background: #f5f7f8;
             border-top: 2px solid #ddd;
         }
 
         .btn {
-            padding: 12px 30px;
+            padding: 12px 22px;
             border: none;
-            border-radius: 6px;
+            border-radius: 4px;
             font-size: 16px;
             font-weight: 600;
             cursor: pointer;
-            transition: all 0.3s;
-            display: flex;
+            transition: background 0.2s ease;
+            display: inline-flex;
             align-items: center;
             gap: 8px;
         }
@@ -250,25 +255,23 @@ function Get-HTMLPage {
         }
 
         .btn-whatif {
-            background: #3498db;
-            color: white;
+            background-color: transparent;
+            border: 2px solid #008361;
+            color: #008361;
+            padding: 10px 20px;
         }
 
         .btn-whatif:hover:not(:disabled) {
-            background: #2980b9;
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(52,152,219,0.3);
+            background-color: #e7f4f1;
         }
 
         .btn-deploy {
-            background: #27ae60;
+            background-color: #008361;
             color: white;
         }
 
         .btn-deploy:hover:not(:disabled) {
-            background: #229954;
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(39,174,96,0.3);
+            background-color: #006f4f;
         }
 
         .btn-stop {
@@ -301,15 +304,17 @@ function Get-HTMLPage {
 
         .log-controls button {
             padding: 8px 15px;
-            background: #667eea;
+            background: #008361;
             color: white;
             border: none;
             border-radius: 4px;
             cursor: pointer;
+            font-weight: 600;
+            transition: background 0.2s ease;
         }
 
         .log-controls button:hover {
-            background: #5568d3;
+            background: #006f4f;
         }
 
         .status-badge {
@@ -370,8 +375,8 @@ function Get-HTMLPage {
 <body>
     <div class="container">
         <div class="header">
-            <h1>🚀 SCCM Application Deployment Tool</h1>
-            <p>Production-ready deployment automation with real-time monitoring</p>
+            <h1>SCCM Application Deployment Tool</h1>
+            <p>Automated deployment with real-time monitoring</p>
         </div>
 
         <div class="tabs">
@@ -386,31 +391,31 @@ function Get-HTMLPage {
             <div class="form-row">
                 <div class="form-group">
                     <label class="required">Application Name</label>
-                    <input type="text" id="appName" value="MSCPPROJECTSTD_2024_00S00_P" placeholder="e.g., MyApp_v1.0">
+                    <input type="text" id="appName" value="" placeholder="e.g., MyApp_v1.0">
                     <div class="help-text">Unique name for the application in SCCM</div>
                 </div>
 
                 <div class="form-group">
                     <label>Deployment Type Name</label>
-                    <input type="text" id="deployTypeName" value="MSCPPROJECTSTD_2024_00S00_DEPLOY01">
+                    <input type="text" id="deployTypeName" value="" placeholder="e.g., MyApp_DEPLOY01">
                 </div>
             </div>
 
             <div class="form-group">
                 <label>Description</label>
-                <input type="text" id="description" value="Custom application - scripted install">
+                <input type="text" id="description" value="" placeholder="Application description">
             </div>
 
             <div class="form-row">
                 <div class="form-group">
                     <label class="required">Site Code</label>
-                    <input type="text" id="siteCode" value="365" maxlength="3" placeholder="ABC">
+                    <input type="text" id="siteCode" value="" maxlength="3" placeholder="ABC">
                     <div class="help-text">3-letter SCCM site code</div>
                 </div>
 
                 <div class="form-group">
                     <label class="required">Site Server FQDN</label>
-                    <input type="text" id="siteServer" value="eusdevptp3.namdev.nsrootdev.net" placeholder="sccm.domain.com">
+                    <input type="text" id="siteServer" value="" placeholder="sccm.domain.com">
                 </div>
             </div>
 
@@ -419,19 +424,19 @@ function Get-HTMLPage {
 
                 <div class="form-group">
                     <label class="required">Content Location (UNC Path)</label>
-                    <input type="text" id="contentLocation" value="\\eusdevptp3\SCCMSource\Applications\Defender" placeholder="\\server\share\folder">
+                    <input type="text" id="contentLocation" value="" placeholder="\\server\share\folder">
                     <div class="help-text">Network path to application source files</div>
                 </div>
 
                 <div class="form-row">
                     <div class="form-group">
                         <label class="required">Install Command</label>
-                        <input type="text" id="installCmd" value="InstallProjectSTD2024.cmd">
+                        <input type="text" id="installCmd" value="" placeholder="setup.exe /silent">
                     </div>
 
                     <div class="form-group">
                         <label>Uninstall Command</label>
-                        <input type="text" id="uninstallCmd" value="RemoveProjectSTD2024.cmd">
+                        <input type="text" id="uninstallCmd" value="" placeholder="uninstall.exe /quiet">
                     </div>
                 </div>
 
@@ -446,7 +451,7 @@ function Get-HTMLPage {
 
                 <div class="form-group">
                     <label class="required">Limiting Collection</label>
-                    <input type="text" id="limitingCollection" value="All Desktop and Server Clients">
+                    <input type="text" id="limitingCollection" value="" placeholder="All Desktop and Server Clients">
                 </div>
 
                 <div class="form-row">
@@ -463,7 +468,7 @@ function Get-HTMLPage {
 
                 <div class="form-group">
                     <label class="required">Distribution Point Group</label>
-                    <input type="text" id="dpGroup" value="All Distribution Points">
+                    <input type="text" id="dpGroup" value="" placeholder="All Distribution Points">
                 </div>
             </fieldset>
 
@@ -473,12 +478,12 @@ function Get-HTMLPage {
                 <div class="form-row">
                     <div class="form-group">
                         <label>Application Folder Path</label>
-                        <input type="text" id="appFolder" value="Desktops\3. PROD">
+                        <input type="text" id="appFolder" value="" placeholder="Applications\Production">
                     </div>
 
                     <div class="form-group">
                         <label>Collection Folder Path</label>
-                        <input type="text" id="collectionFolder" value="Desktops\Applications\3. PROD">
+                        <input type="text" id="collectionFolder" value="" placeholder="Collections\Applications\Production">
                     </div>
                 </div>
             </fieldset>
