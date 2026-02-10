@@ -50,7 +50,11 @@ function Get-ContentType {
         '.ico'  = 'image/x-icon'
     }
 
-    return $contentTypes[$Extension] ?? 'text/plain'
+    $type = $contentTypes[$Extension]
+    if ($type) {
+        return $type
+    }
+    return 'text/plain'
 }
 
 function Send-HttpResponse {
