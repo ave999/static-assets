@@ -15,7 +15,10 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $false)]
-    [int]$Port = 8080
+    [int]$Port = 8080,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$AllowRemoteAccess
 )
 
 $ErrorActionPreference = 'Stop'
@@ -840,7 +843,21 @@ function Handle-Deploy {
 
 # Start HTTP listener
 $listener = New-Object System.Net.HttpListener
-$listener.Prefixes.Add("http://localhost:$Port/")
+
+if ($AllowRemoteAccess) {
+    # Bind to all network interfaces
+    $listener.Prefixes.Add("http://+:$Port/")
+
+    # Get local IP addresses
+    $localIPs = Get-NetIPAddress -AddressFamily IPv4 |
+                Where-Object { $_.IPAddress -notmatch '^(127\.|169\.254\.)' } |
+                Select-Object -ExpandProperty IPAddress
+
+    $primaryIP = $localIPs | Select-Object -First 1
+} else {
+    # Localhost only (default, safer)
+    $listener.Prefixes.Add("http://localhost:$Port/")
+}
 
 try {
     $listener.Start()
@@ -849,13 +866,35 @@ try {
     Write-Host "SCCM Deployment Web GUI Started" -ForegroundColor Green
     Write-Host "========================================" -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "Open your browser to: http://localhost:$Port" -ForegroundColor Yellow
+
+    if ($AllowRemoteAccess) {
+        Write-Host "Server is accessible from network:" -ForegroundColor Yellow
+        Write-Host "  Local:   http://localhost:$Port" -ForegroundColor White
+        if ($primaryIP) {
+            Write-Host "  Network: http://${primaryIP}:$Port" -ForegroundColor White
+        }
+        foreach ($ip in $localIPs) {
+            if ($ip -ne $primaryIP) {
+                Write-Host "           http://${ip}:$Port" -ForegroundColor Gray
+            }
+        }
+        Write-Host ""
+        Write-Host "IMPORTANT: Ensure Windows Firewall allows port $Port" -ForegroundColor Yellow
+        Write-Host "Run this command as Administrator to open the port:" -ForegroundColor Gray
+        Write-Host "  New-NetFirewallRule -DisplayName 'SCCM Web GUI' -Direction Inbound -LocalPort $Port -Protocol TCP -Action Allow" -ForegroundColor Cyan
+    } else {
+        Write-Host "Open your browser to: http://localhost:$Port" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "Note: Only accessible from this computer." -ForegroundColor Gray
+        Write-Host "Use -AllowRemoteAccess to enable network access." -ForegroundColor Gray
+    }
+
     Write-Host ""
     Write-Host "Press Ctrl+C to stop the server" -ForegroundColor Gray
     Write-Host "========================================" -ForegroundColor Cyan
     Write-Host ""
 
-    # Try to open browser
+    # Try to open browser (only on localhost)
     Start-Process "http://localhost:$Port"
 
     while ($listener.IsListening) {
