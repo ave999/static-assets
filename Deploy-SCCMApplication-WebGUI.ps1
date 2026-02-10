@@ -15,12 +15,10 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $false)]
-    [int]$Port = 8080,
-
-    [Parameter(Mandatory = $false)]
     [switch]$AllowRemoteAccess
 )
 
+$Port = 80  # Fixed port
 $ErrorActionPreference = 'Stop'
 
 # Get script directory
@@ -556,7 +554,14 @@ function Get-HTMLPage {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
 
-            event.target.classList.add('active');
+            // Find and activate the clicked tab
+            const tabs = document.querySelectorAll('.tab');
+            tabs.forEach(tab => {
+                if (tab.textContent.includes(tabName === 'config' ? 'Configuration' : tabName === 'options' ? 'Options' : 'Log')) {
+                    tab.classList.add('active');
+                }
+            });
+
             document.getElementById(tabName).classList.add('active');
 
             if (tabName === 'log') {

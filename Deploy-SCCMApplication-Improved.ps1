@@ -148,13 +148,22 @@ if (-not $UninstallCollectionName) {
 
 function Write-Log {
     param(
-        [Parameter(Mandatory)]
-        [string]$Message,
+        [Parameter(Mandatory = $false)]
+        [AllowEmptyString()]
+        [string]$Message = "",
 
         [Parameter(Mandatory = $false)]
         [ValidateSet('Info', 'Success', 'Warning', 'Error', 'Step')]
         [string]$Level = 'Info'
     )
+
+    # Skip empty messages for console output (but write blank line to log file)
+    if ([string]::IsNullOrWhiteSpace($Message)) {
+        if ($LogFilePath) {
+            "" | Out-File -FilePath $LogFilePath -Append -WhatIf:$false -ErrorAction SilentlyContinue
+        }
+        return
+    }
 
     $timestamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
     $logMessage = "[$timestamp] [$Level] $Message"
@@ -168,10 +177,10 @@ function Write-Log {
         default   { Write-Host "[INFO] $Message" }
     }
 
-    # File output if specified
+    # File output if specified (force creation even in WhatIf mode)
     if ($LogFilePath) {
         try {
-            $logMessage | Out-File -FilePath $LogFilePath -Append -ErrorAction Stop
+            $logMessage | Out-File -FilePath $LogFilePath -Append -WhatIf:$false -ErrorAction Stop
         }
         catch {
             Write-Warning "Failed to write to log file: $_"
