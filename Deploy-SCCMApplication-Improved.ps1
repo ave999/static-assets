@@ -239,9 +239,12 @@ function Test-Prerequisites {
         throw "Installation command file not found: $installFile"
     }
 
-    $uninstallFile = Join-Path $ContentLocation $UninstallCommand
-    if (-not (Test-Path $uninstallFile)) {
-        Write-Log -Message "Uninstall command file not found: $uninstallFile (continuing)" -Level 'Warning'
+    # Only check uninstall file if uninstall command was provided
+    if (-not [string]::IsNullOrWhiteSpace($UninstallCommand)) {
+        $uninstallFile = Join-Path $ContentLocation $UninstallCommand
+        if (-not (Test-Path $uninstallFile)) {
+            Write-Log -Message "Uninstall command file not found: $uninstallFile (continuing)" -Level 'Warning'
+        }
     }
 
     Write-Log -Message "Pre-flight validation passed." -Level 'Success'

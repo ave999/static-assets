@@ -428,7 +428,7 @@ function Get-HTMLPage {
                 <div class="form-group">
                     <label class="required">Content Location (UNC Path)</label>
                     <input type="text" id="contentLocation" value="" placeholder="\\server\share\folder">
-                    <div class="help-text">Network path to application source files</div>
+                    <div class="help-text">Network path to application source files (type the full UNC path manually)</div>
                 </div>
 
                 <div class="form-row">
@@ -627,23 +627,54 @@ function Get-HTMLPage {
         }
 
         function validateInputs() {
-            const required = ['appName', 'siteCode', 'siteServer', 'contentLocation', 'installCmd', 'limitingCollection', 'dpGroup'];
             const errors = [];
 
-            for (const field of required) {
+            // Required fields with friendly names
+            const required = {
+                'appName': 'Application Name',
+                'siteCode': 'Site Code',
+                'siteServer': 'Site Server FQDN',
+                'contentLocation': 'Content Location',
+                'installCmd': 'Install Command',
+                'limitingCollection': 'Limiting Collection',
+                'dpGroup': 'Distribution Point Group'
+            };
+
+            // Check all required fields
+            for (const [field, label] of Object.entries(required)) {
                 const value = document.getElementById(field).value.trim();
                 if (!value) {
-                    errors.push(`${field} is required`);
+                    errors.push(`• ${label} is required`);
                 }
             }
 
+            // Validate UNC path format
             const contentLoc = document.getElementById('contentLocation').value.trim();
             if (contentLoc && !contentLoc.startsWith('\\\\')) {
-                errors.push('Content Location must be a UNC path (starts with \\\\)');
+                errors.push('• Content Location must be a UNC path (e.g., \\\\server\\share\\folder)');
             }
 
+            // Validate site code is 3 characters
+            const siteCode = document.getElementById('siteCode').value.trim();
+            if (siteCode && siteCode.length !== 3) {
+                errors.push('• Site Code must be exactly 3 characters');
+            }
+
+            // Validate folder paths don't have illegal characters
+            const appFolder = document.getElementById('appFolder').value.trim();
+            const collFolder = document.getElementById('collectionFolder').value.trim();
+
+            if (appFolder && /[<>:"|?*]/.test(appFolder)) {
+                errors.push('• Application Folder Path contains illegal characters');
+            }
+
+            if (collFolder && /[<>:"|?*]/.test(collFolder)) {
+                errors.push('• Collection Folder Path contains illegal characters');
+            }
+
+            // Show errors if any
             if (errors.length > 0) {
-                alert('Validation errors:\n\n' + errors.join('\n'));
+                alert('Please fix the following errors:\n\n' + errors.join('\n'));
                 return false;
             }
 
