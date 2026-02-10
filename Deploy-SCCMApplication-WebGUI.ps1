@@ -502,8 +502,8 @@ function Get-HTMLPage {
 
             <div class="form-group">
                 <label>Log File Path</label>
-                <input type="text" id="logPath" value="">
-                <div class="help-text">Leave empty for default temp location</div>
+                <input type="text" id="logPath" value="" placeholder="C:\Logs\deployment.log">
+                <div class="help-text">Full path to log file (e.g., C:\Logs\deployment.log). Leave empty to skip file logging.</div>
             </div>
 
             <div class="form-group checkbox-group">
@@ -668,7 +668,7 @@ function Get-HTMLPage {
                 CollectionFolder: document.getElementById('collectionFolder').value,
                 MaxRuntimeMins: parseInt(document.getElementById('maxRuntime').value),
                 CollectionCreationTimeoutMinutes: parseInt(document.getElementById('collectionTimeout').value),
-                LogFilePath: document.getElementById('enableLogging').checked ? document.getElementById('logPath').value : null,
+                LogFilePath: document.getElementById('enableLogging').checked ? (document.getElementById('logPath').value.trim() || null) : null,
                 Force: document.getElementById('forceMode').checked,
                 NoRollback: document.getElementById('noRollback').checked
             };
@@ -826,19 +826,22 @@ function Handle-Deploy {
 
     if ($config.InstallCollectionName) { $params.InstallCollectionName = $config.InstallCollectionName }
     if ($config.UninstallCollectionName) { $params.UninstallCollectionName = $config.UninstallCollectionName }
-    if ($config.LogFilePath) { $params.LogFilePath = $config.LogFilePath }
+    if ($config.LogFilePath -and $config.LogFilePath.Trim()) { $params.LogFilePath = $config.LogFilePath.Trim() }
     if ($config.Force) { $params.Force = $true }
     if ($config.NoRollback) { $params.NoRollback = $true }
     if ($config.WhatIf) { $params.WhatIf = $true }
 
     # Start deployment in background
-    $script:CurrentJobId = Start-Job -ScriptBlock {
+    $job = Start-Job -ScriptBlock {
         param($ScriptPath, $Params)
         & $ScriptPath @Params 2>&1
     } -ArgumentList $DeploymentScript, $params
 
+    # Store job ID (not the object)
+    $script:CurrentJobId = $job.Id
+
     # Add initial log message
-    $script:LogMessages += "Starting deployment job (ID: $($script:CurrentJobId))..."
+    $script:LogMessages += "Starting deployment job (ID: $($job.Id))..."
     $script:LogMessages += "Waiting for output..."
 
     Send-HttpResponse -Context $Context -Content '{"success":true}' -ContentType 'application/json'
