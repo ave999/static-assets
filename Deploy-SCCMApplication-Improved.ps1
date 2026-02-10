@@ -202,13 +202,23 @@ function Invoke-Step {
     Write-Log -Message $Name -Level 'Step'
 
     try {
-        $result = & $Script
+        # Capture verbose output if verbose logging is enabled
+        if ($VerboseLogging) {
+            $verboseOutput = & $Script 4>&1 3>&1 2>&1
+            foreach ($line in $verboseOutput) {
+                if ($line) {
+                    Write-Log -Message "  [VERBOSE] $line" -Level 'Info'
+                }
+            }
+        } else {
+            $result = & $Script
+        }
         Write-Log -Message "$Name completed." -Level 'Success'
         return $result
     }
     catch {
         Write-Log -Message "$Name failed." -Level 'Error'
-        $_ | Format-List * -Force | Out-String | Write-Log -Level 'Error'
+        Write-Log -Message "Error: $_" -Level 'Error'
 
         if ($_.Exception.InnerException) {
             Write-Log -Message "InnerException: $($_.Exception.InnerException)" -Level 'Error'
@@ -252,21 +262,32 @@ function Test-Prerequisites {
     Write-Log -Message "  Content location accessible" -Level 'Info'
 
     # Check for required installation files
-    $installFile = Join-Path $ContentLocation $InstallCommand
-    Write-Log -Message "Checking install file: $installFile" -Level 'Info'
-    if (-not (Test-Path $installFile)) {
-        throw "Installation command file not found: $installFile"
+    # Skip validation if command contains environment variables (DOS variables like %ProgramFiles%)
+    if ($InstallCommand -match '%.*%') {
+        Write-Log -Message "Install command contains environment variable(s) - skipping file validation" -Level 'Info'
+        Write-Log -Message "  Command: $InstallCommand" -Level 'Info'
+    } else {
+        $installFile = Join-Path $ContentLocation $InstallCommand
+        Write-Log -Message "Checking install file: $installFile" -Level 'Info'
+        if (-not (Test-Path $installFile)) {
+            throw "Installation command file not found: $installFile"
+        }
+        Write-Log -Message "  Install file found" -Level 'Info'
     }
-    Write-Log -Message "  Install file found" -Level 'Info'
 
     # Only check uninstall file if uninstall command was provided
     if (-not [string]::IsNullOrWhiteSpace($UninstallCommand)) {
-        $uninstallFile = Join-Path $ContentLocation $UninstallCommand
-        Write-Log -Message "Checking uninstall file: $uninstallFile" -Level 'Info'
-        if (-not (Test-Path $uninstallFile)) {
-            Write-Log -Message "  Uninstall command file not found: $uninstallFile (continuing)" -Level 'Warning'
+        if ($UninstallCommand -match '%.*%') {
+            Write-Log -Message "Uninstall command contains environment variable(s) - skipping file validation" -Level 'Info'
+            Write-Log -Message "  Command: $UninstallCommand" -Level 'Info'
         } else {
-            Write-Log -Message "  Uninstall file found" -Level 'Info'
+            $uninstallFile = Join-Path $ContentLocation $UninstallCommand
+            Write-Log -Message "Checking uninstall file: $uninstallFile" -Level 'Info'
+            if (-not (Test-Path $uninstallFile)) {
+                Write-Log -Message "  Uninstall command file not found: $uninstallFile (continuing)" -Level 'Warning'
+            } else {
+                Write-Log -Message "  Uninstall file found" -Level 'Info'
+            }
         }
     } else {
         Write-Log -Message "Uninstall command not provided - skipping file check" -Level 'Info'
@@ -359,7 +380,7 @@ function Initialize-SCCMEnvironment {
     Invoke-Step -Name "Import ConfigurationManager module & connect to site" -Script {
         # Import module
         $modulePath = Join-Path (Split-Path $env:SMS_ADMIN_UI_PATH) 'ConfigurationManager.psd1'
-        Import-Module $modulePath -ErrorAction Stop
+        Import-Module $modulePath -Verbose:$VerboseLogging -ErrorAction Stop
 
         # Test connectivity
         Test-SCCMConnectivity -SiteServer $SiteServer
@@ -446,7 +467,7 @@ function New-ApplicationWithDetection {
     # Create application shell
     Invoke-Step -Name "Create application '$Name'" -Script {
         if ($PSCmdlet.ShouldProcess($Name, "Create application")) {
-            New-CMApplication -Name $Name -Description $Description -ErrorAction Stop | Out-Null
+            New-CMApplication -Name $Name -Description $Description -Verbose:$VerboseLogging -ErrorAction Stop | Out-Null
             $script:CreatedObjects.Application = $Name
         }
     }
@@ -498,6 +519,7 @@ function New-ApplicationWithDetection {
                 -ContentFallback `
                 -EnableBranchCache `
                 -AddDetectionClause $clause1, $clause2 `
+                -Verbose:$VerboseLogging `
                 -ErrorAction Stop | Out-Null
 
             Write-Log -Message "Deployment type created with 2 detection rules (AND logic)" -Level 'Success'
