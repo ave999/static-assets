@@ -123,7 +123,10 @@ param(
     [switch]$Force,
 
     [Parameter(Mandatory = $false)]
-    [switch]$NoRollback
+    [switch]$NoRollback,
+
+    [Parameter(Mandatory = $false)]
+    [switch]$VerboseLogging
 )
 
 $ErrorActionPreference = 'Stop'
@@ -218,33 +221,46 @@ function Test-Prerequisites {
     Write-Log -Message "Running pre-flight validation..." -Level 'Step'
 
     # Check if SMS_ADMIN_UI_PATH exists
+    Write-Log -Message "Checking SMS_ADMIN_UI_PATH environment variable..." -Level 'Info'
     if (-not $env:SMS_ADMIN_UI_PATH) {
         throw "SMS_ADMIN_UI_PATH environment variable not found. Ensure ConfigMgr console is installed."
     }
+    Write-Log -Message "  Found: $env:SMS_ADMIN_UI_PATH" -Level 'Info'
 
     # Check if ConfigMgr module path exists
     $modulePath = Join-Path (Split-Path $env:SMS_ADMIN_UI_PATH) 'ConfigurationManager.psd1'
+    Write-Log -Message "Checking ConfigMgr module at: $modulePath" -Level 'Info'
     if (-not (Test-Path $modulePath)) {
         throw "ConfigurationManager module not found at: $modulePath"
     }
+    Write-Log -Message "  Module found" -Level 'Info'
 
     # Check content location accessibility
+    Write-Log -Message "Checking content location: $ContentLocation" -Level 'Info'
     if (-not (Test-Path $ContentLocation -PathType Container)) {
         throw "Content location not accessible: $ContentLocation. Verify path exists and you have permissions."
     }
+    Write-Log -Message "  Content location accessible" -Level 'Info'
 
     # Check for required installation files
     $installFile = Join-Path $ContentLocation $InstallCommand
+    Write-Log -Message "Checking install file: $installFile" -Level 'Info'
     if (-not (Test-Path $installFile)) {
         throw "Installation command file not found: $installFile"
     }
+    Write-Log -Message "  Install file found" -Level 'Info'
 
     # Only check uninstall file if uninstall command was provided
     if (-not [string]::IsNullOrWhiteSpace($UninstallCommand)) {
         $uninstallFile = Join-Path $ContentLocation $UninstallCommand
+        Write-Log -Message "Checking uninstall file: $uninstallFile" -Level 'Info'
         if (-not (Test-Path $uninstallFile)) {
-            Write-Log -Message "Uninstall command file not found: $uninstallFile (continuing)" -Level 'Warning'
+            Write-Log -Message "  Uninstall command file not found: $uninstallFile (continuing)" -Level 'Warning'
+        } else {
+            Write-Log -Message "  Uninstall file found" -Level 'Info'
         }
+    } else {
+        Write-Log -Message "Uninstall command not provided - skipping file check" -Level 'Info'
     }
 
     Write-Log -Message "Pre-flight validation passed." -Level 'Success'
@@ -729,6 +745,35 @@ try {
 
     if ($WhatIf) {
         Write-Log -Message "Running in WhatIf mode - no changes will be made" -Level 'Warning'
+    }
+
+    # Verbose parameter logging
+    if ($VerboseLogging -or $WhatIf) {
+        Write-Log -Message "" -Level 'Info'
+        Write-Log -Message "=== PARAMETER VALUES ===" -Level 'Info'
+        Write-Log -Message "AppName: $AppName" -Level 'Info'
+        Write-Log -Message "Description: $Description" -Level 'Info'
+        Write-Log -Message "SiteCode: $SiteCode" -Level 'Info'
+        Write-Log -Message "SiteServerFqdn: $SiteServerFqdn" -Level 'Info'
+        Write-Log -Message "ContentLocation: $ContentLocation" -Level 'Info'
+        Write-Log -Message "InstallCommand: $InstallCommand" -Level 'Info'
+        Write-Log -Message "UninstallCommand: $UninstallCommand" -Level 'Info'
+        Write-Log -Message "DeploymentTypeName: $DeploymentTypeName" -Level 'Info'
+        Write-Log -Message "DPGroupName: $DPGroupName" -Level 'Info'
+        Write-Log -Message "LimitingCollectionName: $LimitingCollectionName" -Level 'Info'
+        Write-Log -Message "InstallCollectionName: $InstallCollectionName" -Level 'Info'
+        Write-Log -Message "UninstallCollectionName: $UninstallCollectionName" -Level 'Info'
+        Write-Log -Message "ApplicationFolder: $ApplicationFolder" -Level 'Info'
+        Write-Log -Message "CollectionFolder: $CollectionFolder" -Level 'Info'
+        Write-Log -Message "MaxRuntimeMins: $MaxRuntimeMins" -Level 'Info'
+        Write-Log -Message "CollectionCreationTimeoutMinutes: $CollectionCreationTimeoutMinutes" -Level 'Info'
+        Write-Log -Message "LogFilePath: $LogFilePath" -Level 'Info'
+        Write-Log -Message "Force: $Force" -Level 'Info'
+        Write-Log -Message "NoRollback: $NoRollback" -Level 'Info'
+        Write-Log -Message "WhatIf: $WhatIf" -Level 'Info'
+        Write-Log -Message "VerboseLogging: $VerboseLogging" -Level 'Info'
+        Write-Log -Message "=======================" -Level 'Info'
+        Write-Log -Message "" -Level 'Info'
     }
 
     # Pre-flight checks

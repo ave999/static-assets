@@ -516,6 +516,11 @@ function Get-HTMLPage {
                 <label for="noRollback">Disable automatic rollback on failure</label>
             </div>
 
+            <div class="form-group checkbox-group">
+                <input type="checkbox" id="verboseLogging" checked>
+                <label for="verboseLogging">Enable verbose logging (recommended during testing)</label>
+            </div>
+
             <div class="form-group">
                 <label>Collection Creation Timeout (minutes)</label>
                 <input type="number" id="collectionTimeout" value="5" min="1" max="30">
@@ -701,7 +706,8 @@ function Get-HTMLPage {
                 CollectionCreationTimeoutMinutes: parseInt(document.getElementById('collectionTimeout').value),
                 LogFilePath: document.getElementById('enableLogging').checked ? (document.getElementById('logPath').value.trim() || null) : null,
                 Force: document.getElementById('forceMode').checked,
-                NoRollback: document.getElementById('noRollback').checked
+                NoRollback: document.getElementById('noRollback').checked,
+                VerboseLogging: document.getElementById('verboseLogging').checked
             };
         }
 
@@ -836,6 +842,18 @@ function Handle-Deploy {
     $script:LogMessages = @()
     $script:IsDeploying = $true
 
+    # Log the incoming request
+    $script:LogMessages += "=== WEB GUI REQUEST ==="
+    $script:LogMessages += "Timestamp: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
+    $script:LogMessages += "Mode: $(if ($config.WhatIf) { 'WhatIf' } else { 'Deploy' })"
+    $script:LogMessages += "Application: $($config.AppName)"
+    $script:LogMessages += "Site: $($config.SiteCode) @ $($config.SiteServerFqdn)"
+    $script:LogMessages += "Content: $($config.ContentLocation)"
+    $script:LogMessages += "Install Cmd: $($config.InstallCommand)"
+    $script:LogMessages += "Uninstall Cmd: $(if ($config.UninstallCommand) { $config.UninstallCommand } else { '(not provided)' })"
+    $script:LogMessages += "========================"
+    $script:LogMessages += ""
+
     # Build parameters
     $params = @{
         AppName = $config.AppName
@@ -860,6 +878,7 @@ function Handle-Deploy {
     if ($config.LogFilePath -and $config.LogFilePath.Trim()) { $params.LogFilePath = $config.LogFilePath.Trim() }
     if ($config.Force) { $params.Force = $true }
     if ($config.NoRollback) { $params.NoRollback = $true }
+    if ($config.VerboseLogging) { $params.VerboseLogging = $true }
     if ($config.WhatIf) { $params.WhatIf = $true }
 
     # Start deployment in background
