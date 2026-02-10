@@ -729,6 +729,48 @@ function Get-HTMLPage {
 function Handle-GetLogs {
     param([System.Net.HttpListenerContext]$Context)
 
+    # Collect logs from active job if running
+    if ($script:CurrentJobId -and (Get-Job -Id $script:CurrentJobId -ErrorAction SilentlyContinue)) {
+        $job = Get-Job -Id $script:CurrentJobId
+
+        # Get any new output from the job
+        $output = Receive-Job -Id $script:CurrentJobId -Keep
+        if ($output) {
+            # Clear and rebuild log from job output
+            $script:LogMessages = @()
+            foreach ($line in $output) {
+                $timestamp = Get-Date -Format 'HH:mm:ss'
+                $script:LogMessages += "[$timestamp] $line"
+            }
+        }
+
+        # Check if job finished
+        if ($job.State -ne 'Running') {
+            # Get final output
+            $finalOutput = Receive-Job -Id $script:CurrentJobId
+            if ($finalOutput) {
+                $script:LogMessages = @()
+                foreach ($line in $finalOutput) {
+                    $timestamp = Get-Date -Format 'HH:mm:ss'
+                    $script:LogMessages += "[$timestamp] $line"
+                }
+            }
+
+            $script:LogMessages += ""
+            $script:LogMessages += "========================================="
+            if ($job.State -eq 'Completed') {
+                $script:LogMessages += "DEPLOYMENT COMPLETED"
+            } else {
+                $script:LogMessages += "DEPLOYMENT FAILED OR WAS INTERRUPTED (State: $($job.State))"
+            }
+            $script:LogMessages += "========================================="
+
+            Remove-Job -Id $script:CurrentJobId -Force -ErrorAction SilentlyContinue
+            $script:IsDeploying = $false
+            $script:CurrentJobId = $null
+        }
+    }
+
     $response = @{
         logs = $script:LogMessages
         isDeploying = $script:IsDeploying
@@ -795,46 +837,9 @@ function Handle-Deploy {
         & $ScriptPath @Params 2>&1
     } -ArgumentList $DeploymentScript, $params
 
-    # Start log monitoring
-    Start-Job -ScriptBlock {
-        param($JobId, $LogMessages, $IsDeploying)
-
-        while ((Get-Job -Id $JobId).State -eq 'Running') {
-            $output = Receive-Job -Id $JobId
-            if ($output) {
-                foreach ($line in $output) {
-                    $timestamp = Get-Date -Format 'HH:mm:ss'
-                    $script:LogMessages += "[$timestamp] $line"
-                }
-            }
-            Start-Sleep -Milliseconds 500
-        }
-
-        # Get final output
-        $finalOutput = Receive-Job -Id $JobId
-        if ($finalOutput) {
-            foreach ($line in $finalOutput) {
-                $timestamp = Get-Date -Format 'HH:mm:ss'
-                $script:LogMessages += "[$timestamp] $line"
-            }
-        }
-
-        $script:LogMessages += ""
-        $script:LogMessages += "========================================="
-
-        if ((Get-Job -Id $JobId).State -eq 'Completed') {
-            $script:LogMessages += "DEPLOYMENT COMPLETED"
-        } else {
-            $script:LogMessages += "DEPLOYMENT FAILED OR WAS INTERRUPTED"
-        }
-
-        $script:LogMessages += "========================================="
-
-        Remove-Job -Id $JobId -Force
-        $script:IsDeploying = $false
-        $script:CurrentJobId = $null
-
-    } -ArgumentList $script:CurrentJobId, $script:LogMessages, $script:IsDeploying | Out-Null
+    # Add initial log message
+    $script:LogMessages += "Starting deployment job (ID: $($script:CurrentJobId))..."
+    $script:LogMessages += "Waiting for output..."
 
     Send-HttpResponse -Context $Context -Content '{"success":true}' -ContentType 'application/json'
 }
