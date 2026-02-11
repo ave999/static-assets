@@ -355,6 +355,51 @@ function Get-HTMLPage {
             color: red;
         }
 
+        .input-error {
+            border-color: #e74c3c !important;
+            background-color: #fef5f5 !important;
+        }
+
+        .error-message {
+            color: #e74c3c;
+            font-size: 12px;
+            margin-top: 5px;
+            display: none;
+        }
+
+        .error-message.visible {
+            display: block;
+        }
+
+        .validation-summary {
+            background-color: #fef5f5;
+            border: 2px solid #e74c3c;
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 20px;
+            display: none;
+        }
+
+        .validation-summary.visible {
+            display: block;
+        }
+
+        .validation-summary h3 {
+            color: #e74c3c;
+            margin-bottom: 10px;
+            font-size: 16px;
+        }
+
+        .validation-summary ul {
+            margin: 0;
+            padding-left: 20px;
+        }
+
+        .validation-summary li {
+            color: #721c24;
+            margin-bottom: 5px;
+        }
+
         .spinner {
             display: inline-block;
             width: 14px;
@@ -386,10 +431,16 @@ function Get-HTMLPage {
         <div id="config" class="tab-content active">
             <h2>Application Configuration</h2>
 
+            <div id="validationSummary" class="validation-summary">
+                <h3>⚠️ Please fix the following errors:</h3>
+                <ul id="validationErrors"></ul>
+            </div>
+
             <div class="form-row">
                 <div class="form-group">
                     <label class="required">Application Name</label>
                     <input type="text" id="appName" value="" placeholder="e.g., MyApp_v1.0">
+                    <div class="error-message" id="appName-error">Application Name is required</div>
                     <div class="help-text">Unique name for the application in SCCM</div>
                 </div>
 
@@ -410,6 +461,7 @@ function Get-HTMLPage {
                 <div class="form-group">
                     <label class="required">Content Location (UNC Path)</label>
                     <input type="text" id="contentLocation" value="" placeholder="\\server\share\folder">
+                    <div class="error-message" id="contentLocation-error">Content Location is required and must be a UNC path (\\server\share\folder)</div>
                     <div class="help-text">Network path to application source files (type the full UNC path manually)</div>
                 </div>
 
@@ -417,6 +469,7 @@ function Get-HTMLPage {
                     <div class="form-group">
                         <label class="required">Install Command</label>
                         <input type="text" id="installCmd" value="" placeholder="setup.exe /silent">
+                        <div class="error-message" id="installCmd-error">Install Command is required</div>
                     </div>
 
                     <div class="form-group">
@@ -437,6 +490,7 @@ function Get-HTMLPage {
                 <div class="form-group">
                     <label class="required">Limiting Collection</label>
                     <input type="text" id="limitingCollection" value="" placeholder="All Desktop and Server Clients">
+                    <div class="error-message" id="limitingCollection-error">Limiting Collection is required</div>
                 </div>
 
                 <div class="form-row">
@@ -454,6 +508,7 @@ function Get-HTMLPage {
                 <div class="form-group">
                     <label class="required">Distribution Point Group</label>
                     <input type="text" id="dpGroup" value="" placeholder="All Distribution Points">
+                    <div class="error-message" id="dpGroup-error">Distribution Point Group is required</div>
                 </div>
             </fieldset>
 
@@ -533,6 +588,95 @@ function Get-HTMLPage {
 
     <script>
         let logRefreshInterval = null;
+        let validationErrors = {};
+
+        // Required fields configuration
+        const requiredFields = {
+            'appName': 'Application Name',
+            'contentLocation': 'Content Location',
+            'installCmd': 'Install Command',
+            'limitingCollection': 'Limiting Collection',
+            'dpGroup': 'Distribution Point Group'
+        };
+
+        function validateField(fieldId) {
+            const field = document.getElementById(fieldId);
+            const errorDiv = document.getElementById(fieldId + '-error');
+            const value = field.value.trim();
+            let isValid = true;
+            let errorMessage = '';
+
+            // Check if required field is empty
+            if (requiredFields[fieldId] && !value) {
+                isValid = false;
+                errorMessage = requiredFields[fieldId] + ' is required';
+            }
+
+            // Special validation for Content Location (must be UNC path)
+            if (fieldId === 'contentLocation' && value && !value.startsWith('\\\\')) {
+                isValid = false;
+                errorMessage = 'Content Location must be a UNC path (e.g., \\\\server\\share\\folder)';
+            }
+
+            // Update UI
+            if (isValid) {
+                field.classList.remove('input-error');
+                if (errorDiv) {
+                    errorDiv.classList.remove('visible');
+                }
+                delete validationErrors[fieldId];
+            } else {
+                field.classList.add('input-error');
+                if (errorDiv) {
+                    errorDiv.textContent = errorMessage;
+                    errorDiv.classList.add('visible');
+                }
+                validationErrors[fieldId] = errorMessage;
+            }
+
+            updateValidationSummary();
+            updateButtonStates();
+            return isValid;
+        }
+
+        function validateAllFields() {
+            validationErrors = {};
+            let allValid = true;
+
+            for (const fieldId in requiredFields) {
+                if (!validateField(fieldId)) {
+                    allValid = false;
+                }
+            }
+
+            return allValid;
+        }
+
+        function updateValidationSummary() {
+            const summary = document.getElementById('validationSummary');
+            const errorList = document.getElementById('validationErrors');
+            const errorCount = Object.keys(validationErrors).length;
+
+            if (errorCount > 0) {
+                errorList.innerHTML = '';
+                for (const fieldId in validationErrors) {
+                    const li = document.createElement('li');
+                    li.textContent = validationErrors[fieldId];
+                    errorList.appendChild(li);
+                }
+                summary.classList.add('visible');
+            } else {
+                summary.classList.remove('visible');
+            }
+        }
+
+        function updateButtonStates() {
+            const hasErrors = Object.keys(validationErrors).length > 0;
+            const isDeploying = document.getElementById('statusBadge').classList.contains('status-deploying');
+
+            document.getElementById('btnWhatIf').disabled = hasErrors || isDeploying;
+            document.getElementById('btnDeploy').disabled = hasErrors || isDeploying;
+        }
 
         function switchTab(tabName) {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -588,20 +732,16 @@ function Get-HTMLPage {
 
         function updateStatus(isDeploying) {
             const badge = document.getElementById('statusBadge');
-            const btnWhatIf = document.getElementById('btnWhatIf');
-            const btnDeploy = document.getElementById('btnDeploy');
 
             if (isDeploying) {
                 badge.className = 'status-badge status-deploying';
                 badge.innerHTML = '<span class="spinner"></span> Deploying...';
-                btnWhatIf.disabled = true;
-                btnDeploy.disabled = true;
             } else {
                 badge.className = 'status-badge status-ready';
                 badge.textContent = 'Ready';
-                btnWhatIf.disabled = false;
-                btnDeploy.disabled = false;
             }
+
+            updateButtonStates();
         }
 
         function clearLog() {
@@ -621,46 +761,26 @@ function Get-HTMLPage {
         }
 
         function validateInputs() {
-            const errors = [];
+            // Validate all required fields
+            const allValid = validateAllFields();
 
-            // Required fields with friendly names
-            const required = {
-                'appName': 'Application Name',
-                'contentLocation': 'Content Location',
-                'installCmd': 'Install Command',
-                'limitingCollection': 'Limiting Collection',
-                'dpGroup': 'Distribution Point Group'
-            };
-
-            // Check all required fields
-            for (const [field, label] of Object.entries(required)) {
-                const value = document.getElementById(field).value.trim();
-                if (!value) {
-                    errors.push(`• ${label} is required`);
-                }
-            }
-
-            // Validate UNC path format
-            const contentLoc = document.getElementById('contentLocation').value.trim();
-            if (contentLoc && !contentLoc.startsWith('\\\\')) {
-                errors.push('• Content Location must be a UNC path (e.g., \\\\server\\share\\folder)');
-            }
-
-            // Validate folder paths don't have illegal characters
+            // Additional validation for optional fields
             const appFolder = document.getElementById('appFolder').value.trim();
             const collFolder = document.getElementById('collectionFolder').value.trim();
 
             if (appFolder && /[<>:"|?*]/.test(appFolder)) {
-                errors.push('• Application Folder Path contains illegal characters');
+                alert('Application Folder Path contains illegal characters (<>:"|?*)');
+                return false;
             }
 
             if (collFolder && /[<>:"|?*]/.test(collFolder)) {
-                errors.push('• Collection Folder Path contains illegal characters');
+                alert('Collection Folder Path contains illegal characters (<>:"|?*)');
+                return false;
             }
 
-            // Show errors if any
-            if (errors.length > 0) {
-                alert('Please fix the following errors:\n\n' + errors.join('\n'));
+            if (!allValid) {
+                // Switch to config tab to show errors
+                switchTab('config');
                 return false;
             }
 
@@ -727,8 +847,29 @@ function Get-HTMLPage {
             });
         }
 
-        // Auto-refresh log when on log tab
+        // Initialize real-time validation and auto-refresh
         document.addEventListener('DOMContentLoaded', () => {
+            // Add real-time validation listeners to required fields
+            for (const fieldId in requiredFields) {
+                const field = document.getElementById(fieldId);
+                if (field) {
+                    // Validate on blur (when user leaves the field)
+                    field.addEventListener('blur', () => validateField(fieldId));
+
+                    // Also validate on input for immediate feedback
+                    field.addEventListener('input', () => {
+                        // Only clear error on input, don't show new errors yet
+                        if (field.value.trim()) {
+                            validateField(fieldId);
+                        }
+                    });
+                }
+            }
+
+            // Initial validation to set button states
+            validateAllFields();
+
+            // Auto-refresh log when on log tab
             const activeTab = document.querySelector('.tab-content.active');
             if (activeTab && activeTab.id === 'log') {
                 startLogRefresh();
