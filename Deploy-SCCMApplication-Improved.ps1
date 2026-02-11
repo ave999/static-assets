@@ -406,17 +406,36 @@ function Initialize-SCCMEnvironment {
         $modulePath = Join-Path (Split-Path $env:SMS_ADMIN_UI_PATH) 'ConfigurationManager.psd1'
         Import-Module $modulePath -Verbose:$VerboseLogging -ErrorAction Stop
 
+        # Determine if we're running on the site server itself
+        $localComputerName = $env:COMPUTERNAME
+        $localFqdn = [System.Net.Dns]::GetHostEntry($env:COMPUTERNAME).HostName
+        $isLocalServer = ($SiteServer -eq $localComputerName) -or
+                        ($SiteServer -eq $localFqdn) -or
+                        ($SiteServer -eq "$localComputerName.$env:USERDNSDOMAIN") -or
+                        ($SiteServer.Split('.')[0] -eq $localComputerName)
+
+        # Use local computer name if running on the site server, otherwise use provided name
+        $connectionTarget = if ($isLocalServer) {
+            Write-Log -Message "Detected local execution on site server - using local computer name for connection" -Level 'Info'
+            $localComputerName
+        } else {
+            Write-Log -Message "Remote execution - using provided server name" -Level 'Info'
+            $SiteServer
+        }
+
+        Write-Log -Message "  Connection target: $connectionTarget" -Level 'Info'
+
         # Test connectivity
-        Test-SCCMConnectivity -SiteServer $SiteServer
+        Test-SCCMConnectivity -SiteServer $connectionTarget
 
         # Find or create site drive
         $cmDrive = Get-PSDrive -PSProvider CMSITE -ErrorAction SilentlyContinue |
-                   Where-Object { $_.Root -eq $SiteServer } |
+                   Where-Object { $_.Root -eq $connectionTarget } |
                    Select-Object -First 1
 
         if (-not $cmDrive) {
             Write-Log -Message "Creating new PSDrive for site $SiteCode" -Level 'Info'
-            $cmDrive = New-PSDrive -Name $SiteCode -PSProvider 'AdminUI.PS.Provider\CMSite' -Root $SiteServer -ErrorAction Stop
+            $cmDrive = New-PSDrive -Name $SiteCode -PSProvider 'AdminUI.PS.Provider\CMSite' -Root $connectionTarget -ErrorAction Stop
         }
 
         if (-not $cmDrive) {
