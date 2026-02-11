@@ -402,41 +402,128 @@ function Initialize-SCCMEnvironment {
     )
 
     Invoke-Step -Name "Import ConfigurationManager module & connect to site" -Script {
+        Write-Log -Message "" -Level 'Info'
+        Write-Log -Message "=== MODULE IMPORT & CONNECTION DIAGNOSTICS ===" -Level 'Info'
+        Write-Log -Message "Received SiteServer parameter: $SiteServer" -Level 'Info'
+        Write-Log -Message "" -Level 'Info'
+
         # Import module
+        Write-Log -Message "Step 1: Importing ConfigurationManager module" -Level 'Info'
         $modulePath = Join-Path (Split-Path $env:SMS_ADMIN_UI_PATH) 'ConfigurationManager.psd1'
-        Import-Module $modulePath -Verbose:$VerboseLogging -ErrorAction Stop
+        Write-Log -Message "  Module path: $modulePath" -Level 'Info'
+
+        try {
+            Import-Module $modulePath -Verbose:$VerboseLogging -ErrorAction Stop
+            Write-Log -Message "  Module imported successfully" -Level 'Info'
+        }
+        catch {
+            Write-Log -Message "  FAILED to import module: $_" -Level 'Error'
+            throw
+        }
+        Write-Log -Message "" -Level 'Info'
 
         # Determine if we're running on the site server itself
+        Write-Log -Message "Step 2: Detecting local vs remote execution" -Level 'Info'
         $localComputerName = $env:COMPUTERNAME
-        $localFqdn = [System.Net.Dns]::GetHostEntry($env:COMPUTERNAME).HostName
+        Write-Log -Message "  Local computer name: $localComputerName" -Level 'Info'
+
+        try {
+            $localFqdn = [System.Net.Dns]::GetHostEntry($env:COMPUTERNAME).HostName
+            Write-Log -Message "  Local FQDN: $localFqdn" -Level 'Info'
+        }
+        catch {
+            Write-Log -Message "  Could not resolve local FQDN: $_" -Level 'Warning'
+            $localFqdn = "$localComputerName.$env:USERDNSDOMAIN"
+            Write-Log -Message "  Using constructed FQDN: $localFqdn" -Level 'Info'
+        }
+
+        Write-Log -Message "  User DNS domain: $env:USERDNSDOMAIN" -Level 'Info'
+        Write-Log -Message "  Site server parameter: $SiteServer" -Level 'Info'
+        Write-Log -Message "  Site server hostname: $($SiteServer.Split('.')[0])" -Level 'Info'
+
         $isLocalServer = ($SiteServer -eq $localComputerName) -or
                         ($SiteServer -eq $localFqdn) -or
                         ($SiteServer -eq "$localComputerName.$env:USERDNSDOMAIN") -or
                         ($SiteServer.Split('.')[0] -eq $localComputerName)
 
+        Write-Log -Message "  Comparison results:" -Level 'Info'
+        Write-Log -Message "    SiteServer -eq localComputerName: $($SiteServer -eq $localComputerName)" -Level 'Info'
+        Write-Log -Message "    SiteServer -eq localFqdn: $($SiteServer -eq $localFqdn)" -Level 'Info'
+        Write-Log -Message "    SiteServer -eq constructed FQDN: $($SiteServer -eq "$localComputerName.$env:USERDNSDOMAIN")" -Level 'Info'
+        Write-Log -Message "    SiteServer hostname -eq localComputerName: $($SiteServer.Split('.')[0] -eq $localComputerName)" -Level 'Info'
+        Write-Log -Message "  Is local server: $isLocalServer" -Level 'Info'
+        Write-Log -Message "" -Level 'Info'
+
         # Use local computer name if running on the site server, otherwise use provided name
         $connectionTarget = if ($isLocalServer) {
-            Write-Log -Message "Detected local execution on site server - using local computer name for connection" -Level 'Info'
+            Write-Log -Message "DETECTED: Local execution on site server" -Level 'Info'
+            Write-Log -Message "  Using local computer name for connection" -Level 'Info'
             $localComputerName
         } else {
-            Write-Log -Message "Remote execution - using provided server name" -Level 'Info'
+            Write-Log -Message "DETECTED: Remote execution" -Level 'Info'
+            Write-Log -Message "  Using provided server name" -Level 'Info'
             $SiteServer
         }
 
-        Write-Log -Message "  Connection target: $connectionTarget" -Level 'Info'
+        Write-Log -Message "  Final connection target: $connectionTarget" -Level 'Info'
+        Write-Log -Message "" -Level 'Info'
 
         # Test connectivity
-        Test-SCCMConnectivity -SiteServer $connectionTarget
+        Write-Log -Message "Step 3: Testing connectivity to site server" -Level 'Info'
+        try {
+            Test-SCCMConnectivity -SiteServer $connectionTarget
+            Write-Log -Message "  Connectivity test passed" -Level 'Info'
+        }
+        catch {
+            Write-Log -Message "  Connectivity test FAILED: $_" -Level 'Error'
+            throw
+        }
+        Write-Log -Message "" -Level 'Info'
 
         # Find or create site drive
-        $cmDrive = Get-PSDrive -PSProvider CMSITE -ErrorAction SilentlyContinue |
-                   Where-Object { $_.Root -eq $connectionTarget } |
-                   Select-Object -First 1
+        Write-Log -Message "Step 4: Checking for existing PSDrive" -Level 'Info'
+        Write-Log -Message "  Looking for CMSITE provider drives..." -Level 'Info'
+
+        $allCMDrives = Get-PSDrive -PSProvider CMSITE -ErrorAction SilentlyContinue
+        if ($allCMDrives) {
+            Write-Log -Message "  Found $($allCMDrives.Count) existing CMSITE drive(s):" -Level 'Info'
+            foreach ($drive in $allCMDrives) {
+                Write-Log -Message "    - Drive: $($drive.Name): Root=$($drive.Root)" -Level 'Info'
+            }
+        }
+        else {
+            Write-Log -Message "  No existing CMSITE drives found" -Level 'Info'
+        }
+
+        $cmDrive = $allCMDrives | Where-Object { $_.Root -eq $connectionTarget } | Select-Object -First 1
 
         if (-not $cmDrive) {
-            Write-Log -Message "Creating new PSDrive for site $SiteCode" -Level 'Info'
-            $cmDrive = New-PSDrive -Name $SiteCode -PSProvider 'AdminUI.PS.Provider\CMSite' -Root $connectionTarget -ErrorAction Stop
+            Write-Log -Message "  No matching drive found for target: $connectionTarget" -Level 'Info'
+            Write-Log -Message "" -Level 'Info'
+            Write-Log -Message "Step 5: Creating new PSDrive" -Level 'Info'
+            Write-Log -Message "  Name: $SiteCode" -Level 'Info'
+            Write-Log -Message "  PSProvider: AdminUI.PS.Provider\CMSite" -Level 'Info'
+            Write-Log -Message "  Root: $connectionTarget" -Level 'Info'
+
+            try {
+                $cmDrive = New-PSDrive -Name $SiteCode -PSProvider 'AdminUI.PS.Provider\CMSite' -Root $connectionTarget -ErrorAction Stop
+                Write-Log -Message "  PSDrive created successfully" -Level 'Info'
+                Write-Log -Message "  Drive details: Name=$($cmDrive.Name), Root=$($cmDrive.Root)" -Level 'Info'
+            }
+            catch {
+                Write-Log -Message "  FAILED to create PSDrive" -Level 'Error'
+                Write-Log -Message "  Error: $_" -Level 'Error'
+                Write-Log -Message "  Error type: $($_.Exception.GetType().FullName)" -Level 'Error'
+                if ($_.Exception.InnerException) {
+                    Write-Log -Message "  Inner exception: $($_.Exception.InnerException.Message)" -Level 'Error'
+                }
+                throw
+            }
         }
+        else {
+            Write-Log -Message "  Found existing matching drive: $($cmDrive.Name)" -Level 'Info'
+        }
+        Write-Log -Message "" -Level 'Info'
 
         if (-not $cmDrive) {
             throw "Failed to create or find SCCM site drive for $SiteServer"
