@@ -238,6 +238,14 @@ function Test-Prerequisites {
     param()
 
     Write-Log -Message "Running pre-flight validation..." -Level 'Step'
+    Write-Log -Message "" -Level 'Info'
+    Write-Log -Message "=== CONNECTION INFO ===" -Level 'Info'
+    Write-Log -Message "Target Site Code: $SiteCode" -Level 'Info'
+    Write-Log -Message "Target Site Server: $SiteServerFqdn" -Level 'Info'
+    Write-Log -Message "Current User: $env:USERNAME" -Level 'Info'
+    Write-Log -Message "Current Computer: $env:COMPUTERNAME" -Level 'Info'
+    Write-Log -Message "======================" -Level 'Info'
+    Write-Log -Message "" -Level 'Info'
 
     # Check if SMS_ADMIN_UI_PATH exists
     Write-Log -Message "Checking SMS_ADMIN_UI_PATH environment variable..." -Level 'Info'
@@ -302,14 +310,30 @@ function Test-SCCMConnectivity {
         [string]$SiteServer
     )
 
+    Write-Log -Message "Testing connectivity to site server..." -Level 'Info'
+    Write-Log -Message "  Server: $SiteServer" -Level 'Info'
+
     try {
         $testConnection = Test-Connection -ComputerName $SiteServer -Count 1 -Quiet -ErrorAction Stop
         if (-not $testConnection) {
+            Write-Log -Message "  Ping test FAILED" -Level 'Error'
             throw "Cannot reach site server: $SiteServer"
         }
+        Write-Log -Message "  Ping test successful" -Level 'Info'
+
+        # Try to resolve hostname
+        try {
+            $resolved = [System.Net.Dns]::GetHostEntry($SiteServer)
+            Write-Log -Message "  Resolved to: $($resolved.AddressList[0].IPAddressToString)" -Level 'Info'
+        }
+        catch {
+            Write-Log -Message "  Could not resolve hostname (continuing)" -Level 'Warning'
+        }
+
         return $true
     }
     catch {
+        Write-Log -Message "  Connection test failed: $_" -Level 'Error'
         throw "Site server connectivity test failed: $_"
     }
 }

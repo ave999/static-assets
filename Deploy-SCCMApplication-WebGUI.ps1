@@ -407,17 +407,10 @@ function Get-HTMLPage {
                 <input type="text" id="description" value="" placeholder="Application description">
             </div>
 
-            <div class="form-row">
-                <div class="form-group">
-                    <label class="required">Site Code</label>
-                    <input type="text" id="siteCode" value="" maxlength="3" placeholder="ABC">
-                    <div class="help-text">3-letter SCCM site code</div>
-                </div>
-
-                <div class="form-group">
-                    <label class="required">Site Server FQDN</label>
-                    <input type="text" id="siteServer" value="" placeholder="sccm.domain.com">
-                </div>
+            <div class="form-group">
+                <label class="required">Site Server FQDN</label>
+                <input type="text" id="siteServer" value="" placeholder="sccm.domain.com">
+                <div class="help-text">SCCM site server (Site Code: CM0)</div>
             </div>
 
             <fieldset class="fieldset">
@@ -642,7 +635,6 @@ function Get-HTMLPage {
             // Required fields with friendly names
             const required = {
                 'appName': 'Application Name',
-                'siteCode': 'Site Code',
                 'siteServer': 'Site Server FQDN',
                 'contentLocation': 'Content Location',
                 'installCmd': 'Install Command',
@@ -662,12 +654,6 @@ function Get-HTMLPage {
             const contentLoc = document.getElementById('contentLocation').value.trim();
             if (contentLoc && !contentLoc.startsWith('\\\\')) {
                 errors.push('• Content Location must be a UNC path (e.g., \\\\server\\share\\folder)');
-            }
-
-            // Validate site code is 3 characters
-            const siteCode = document.getElementById('siteCode').value.trim();
-            if (siteCode && siteCode.length !== 3) {
-                errors.push('• Site Code must be exactly 3 characters');
             }
 
             // Validate folder paths don't have illegal characters
@@ -695,7 +681,7 @@ function Get-HTMLPage {
             return {
                 AppName: document.getElementById('appName').value,
                 Description: document.getElementById('description').value,
-                SiteCode: document.getElementById('siteCode').value,
+                SiteCode: 'CM0',  // Hardcoded
                 SiteServerFqdn: document.getElementById('siteServer').value,
                 ContentLocation: document.getElementById('contentLocation').value,
                 InstallCommand: document.getElementById('installCmd').value,
@@ -722,7 +708,7 @@ function Get-HTMLPage {
             }
 
             const mode = whatIf ? 'WhatIf' : 'Deploy';
-            const confirmed = confirm(`Start deployment in ${mode} mode?\n\nApplication: ${document.getElementById('appName').value}\nSite: ${document.getElementById('siteCode').value}`);
+            const confirmed = confirm(`Start deployment in ${mode} mode?\n\nApplication: ${document.getElementById('appName').value}\nSite: CM0 @ ${document.getElementById('siteServer').value}`);
 
             if (!confirmed) {
                 return;
