@@ -792,7 +792,7 @@ function Get-HTMLPage {
                 AppName: document.getElementById('appName').value,
                 Description: document.getElementById('description').value,
                 SiteCode: 'CM0',  // Hardcoded
-                SiteServerFqdn: 'sccm-server.company.local',  // Hardcoded
+                SiteServerFqdn: 'WAZEU2PRDDE051.corp.internal.citizensbank.com',  // Hardcoded
                 ContentLocation: document.getElementById('contentLocation').value,
                 InstallCommand: document.getElementById('installCmd').value,
                 UninstallCommand: document.getElementById('uninstallCmd').value,
@@ -818,7 +818,7 @@ function Get-HTMLPage {
             }
 
             const mode = whatIf ? 'WhatIf' : 'Deploy';
-            const confirmed = confirm(`Start deployment in ${mode} mode?\n\nApplication: ${document.getElementById('appName').value}\nSite: CM0 @ sccm-server.company.local`);
+            const confirmed = confirm(`Start deployment in ${mode} mode?\n\nApplication: ${document.getElementById('appName').value}\nSite: CM0 @ WAZEU2PRDDE051.corp.internal.citizensbank.com`);
 
             if (!confirmed) {
                 return;
