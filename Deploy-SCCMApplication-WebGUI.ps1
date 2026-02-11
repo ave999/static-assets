@@ -3,8 +3,8 @@
     Web-based GUI for SCCM Application Deployment
 
 .DESCRIPTION
-    Launches a local web server providing an HTML interface for deploying SCCM applications.
-    Open your browser to http://localhost:8080 after running this script.
+    Launches a web server providing an HTML interface for deploying SCCM applications.
+    Accessible from network on port 80.
 
 .NOTES
     Author: Web GUI wrapper for Deploy-SCCMApplication-Improved.ps1
@@ -13,10 +13,7 @@
 #>
 
 [CmdletBinding()]
-param(
-    [Parameter(Mandatory = $false)]
-    [switch]$AllowRemoteAccess
-)
+param()
 
 $Port = 80  # Fixed port
 $ErrorActionPreference = 'Stop'
@@ -407,12 +404,6 @@ function Get-HTMLPage {
                 <input type="text" id="description" value="" placeholder="Application description">
             </div>
 
-            <div class="form-group">
-                <label class="required">Site Server FQDN</label>
-                <input type="text" id="siteServer" value="" placeholder="sccm.domain.com">
-                <div class="help-text">SCCM site server (Site Code: CM0)</div>
-            </div>
-
             <fieldset class="fieldset">
                 <legend>📁 Content Settings</legend>
 
@@ -635,7 +626,6 @@ function Get-HTMLPage {
             // Required fields with friendly names
             const required = {
                 'appName': 'Application Name',
-                'siteServer': 'Site Server FQDN',
                 'contentLocation': 'Content Location',
                 'installCmd': 'Install Command',
                 'limitingCollection': 'Limiting Collection',
@@ -682,7 +672,7 @@ function Get-HTMLPage {
                 AppName: document.getElementById('appName').value,
                 Description: document.getElementById('description').value,
                 SiteCode: 'CM0',  // Hardcoded
-                SiteServerFqdn: document.getElementById('siteServer').value,
+                SiteServerFqdn: 'sccm-server.company.local',  // Hardcoded
                 ContentLocation: document.getElementById('contentLocation').value,
                 InstallCommand: document.getElementById('installCmd').value,
                 UninstallCommand: document.getElementById('uninstallCmd').value,
@@ -708,7 +698,7 @@ function Get-HTMLPage {
             }
 
             const mode = whatIf ? 'WhatIf' : 'Deploy';
-            const confirmed = confirm(`Start deployment in ${mode} mode?\n\nApplication: ${document.getElementById('appName').value}\nSite: CM0 @ ${document.getElementById('siteServer').value}`);
+            const confirmed = confirm(`Start deployment in ${mode} mode?\n\nApplication: ${document.getElementById('appName').value}\nSite: CM0 @ sccm-server.company.local`);
 
             if (!confirmed) {
                 return;
@@ -893,20 +883,15 @@ function Handle-Deploy {
 # Start HTTP listener
 $listener = New-Object System.Net.HttpListener
 
-if ($AllowRemoteAccess) {
-    # Bind to all network interfaces
-    $listener.Prefixes.Add("http://+:$Port/")
+# Bind to all network interfaces
+$listener.Prefixes.Add("http://+:$Port/")
 
-    # Get local IP addresses
-    $localIPs = Get-NetIPAddress -AddressFamily IPv4 |
-                Where-Object { $_.IPAddress -notmatch '^(127\.|169\.254\.)' } |
-                Select-Object -ExpandProperty IPAddress
+# Get local IP addresses
+$localIPs = Get-NetIPAddress -AddressFamily IPv4 |
+            Where-Object { $_.IPAddress -notmatch '^(127\.|169\.254\.)' } |
+            Select-Object -ExpandProperty IPAddress
 
-    $primaryIP = $localIPs | Select-Object -First 1
-} else {
-    # Localhost only (default, safer)
-    $listener.Prefixes.Add("http://localhost:$Port/")
-}
+$primaryIP = $localIPs | Select-Object -First 1
 
 try {
     $listener.Start()
@@ -915,29 +900,20 @@ try {
     Write-Host "SCCM Deployment Web GUI Started" -ForegroundColor Green
     Write-Host "========================================" -ForegroundColor Cyan
     Write-Host ""
-
-    if ($AllowRemoteAccess) {
-        Write-Host "Server is accessible from network:" -ForegroundColor Yellow
-        Write-Host "  Local:   http://localhost:$Port" -ForegroundColor White
-        if ($primaryIP) {
-            Write-Host "  Network: http://${primaryIP}:$Port" -ForegroundColor White
-        }
-        foreach ($ip in $localIPs) {
-            if ($ip -ne $primaryIP) {
-                Write-Host "           http://${ip}:$Port" -ForegroundColor Gray
-            }
-        }
-        Write-Host ""
-        Write-Host "IMPORTANT: Ensure Windows Firewall allows port $Port" -ForegroundColor Yellow
-        Write-Host "Run this command as Administrator to open the port:" -ForegroundColor Gray
-        Write-Host "  New-NetFirewallRule -DisplayName 'SCCM Web GUI' -Direction Inbound -LocalPort $Port -Protocol TCP -Action Allow" -ForegroundColor Cyan
-    } else {
-        Write-Host "Open your browser to: http://localhost:$Port" -ForegroundColor Yellow
-        Write-Host ""
-        Write-Host "Note: Only accessible from this computer." -ForegroundColor Gray
-        Write-Host "Use -AllowRemoteAccess to enable network access." -ForegroundColor Gray
+    Write-Host "Server is accessible from network:" -ForegroundColor Yellow
+    Write-Host "  Local:   http://localhost:$Port" -ForegroundColor White
+    if ($primaryIP) {
+        Write-Host "  Network: http://${primaryIP}:$Port" -ForegroundColor White
     }
-
+    foreach ($ip in $localIPs) {
+        if ($ip -ne $primaryIP) {
+            Write-Host "           http://${ip}:$Port" -ForegroundColor Gray
+        }
+    }
+    Write-Host ""
+    Write-Host "IMPORTANT: Ensure Windows Firewall allows port $Port" -ForegroundColor Yellow
+    Write-Host "Run this command as Administrator to open the port:" -ForegroundColor Gray
+    Write-Host "  New-NetFirewallRule -DisplayName 'SCCM Web GUI' -Direction Inbound -LocalPort $Port -Protocol TCP -Action Allow" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "Press Ctrl+C to stop the server" -ForegroundColor Gray
     Write-Host "========================================" -ForegroundColor Cyan
