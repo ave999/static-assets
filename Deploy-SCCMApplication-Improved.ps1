@@ -41,7 +41,7 @@
     Skip confirmation prompts.
 
 .EXAMPLE
-    .\Deploy-SCCMApplication-Improved.ps1 -AppName "MSCPPROJECTSTD_2024_00S00_P" -WhatIf
+    .\Deploy-SCCMApplication-Improved.ps1 -AppName "MyApplication" -WhatIf
 
 .EXAMPLE
     .\Deploy-SCCMApplication-Improved.ps1 -AppName "MyApp" -LogFilePath "C:\Logs\deployment.log" -Force
@@ -54,61 +54,54 @@
 
 [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
 param(
-    [Parameter(Mandatory = $false)]
+    [Parameter(Mandatory = $true)]
     [ValidateNotNullOrEmpty()]
-    [string]$AppName = 'MSCPPROJECTSTD_2024_00S00_P',
+    [string]$AppName,
+
+    [Parameter(Mandatory = $true)]
+    [ValidateNotNullOrEmpty()]
+    [string]$SiteCode,
+
+    [Parameter(Mandatory = $true)]
+    [ValidateNotNullOrEmpty()]
+    [string]$SiteServerFqdn,
 
     [Parameter(Mandatory = $false)]
+    [string]$Description = "",
+
+    [Parameter(Mandatory = $true)]
     [ValidateNotNullOrEmpty()]
-    [string]$SiteCode = '365',
+    [string]$ContentLocation,
+
+    [Parameter(Mandatory = $true)]
+    [ValidateNotNullOrEmpty()]
+    [string]$InstallCommand,
 
     [Parameter(Mandatory = $false)]
+    [string]$UninstallCommand = "",
+
+    [Parameter(Mandatory = $true)]
     [ValidateNotNullOrEmpty()]
-    [string]$SiteServerFqdn = 'eusdevptp3.namdev.nsrootdev.net',
+    [string]$DPGroupName,
+
+    [Parameter(Mandatory = $true)]
+    [ValidateNotNullOrEmpty()]
+    [string]$LimitingCollectionName,
 
     [Parameter(Mandatory = $false)]
-    [ValidateNotNullOrEmpty()]
-    [string]$Description = "Custom application - scripted install",
+    [string]$DeploymentTypeName = "",
 
     [Parameter(Mandatory = $false)]
-    [ValidateNotNullOrEmpty()]
-    [string]$ContentLocation = '\\eusdevptp3\SCCMSource\Applications\Defender',
+    [string]$InstallCollectionName = "",
 
     [Parameter(Mandatory = $false)]
-    [ValidateNotNullOrEmpty()]
-    [string]$InstallCommand = 'InstallProjectSTD2024.cmd',
+    [string]$UninstallCollectionName = "",
 
     [Parameter(Mandatory = $false)]
-    [ValidateNotNullOrEmpty()]
-    [string]$UninstallCommand = 'RemoveProjectSTD2024.cmd',
+    [string]$ApplicationFolder = "",
 
     [Parameter(Mandatory = $false)]
-    [ValidateNotNullOrEmpty()]
-    [string]$DPGroupName = 'All Distribution Points',
-
-    [Parameter(Mandatory = $false)]
-    [ValidateNotNullOrEmpty()]
-    [string]$LimitingCollectionName = 'All Desktop and Server Clients',
-
-    [Parameter(Mandatory = $false)]
-    [ValidateNotNullOrEmpty()]
-    [string]$DeploymentTypeName = 'MSCPPROJECTSTD_2024_00S00_DEPLOY01',
-
-    [Parameter(Mandatory = $false)]
-    [ValidateNotNullOrEmpty()]
-    [string]$InstallCollectionName,
-
-    [Parameter(Mandatory = $false)]
-    [ValidateNotNullOrEmpty()]
-    [string]$UninstallCollectionName,
-
-    [Parameter(Mandatory = $false)]
-    [ValidateNotNullOrEmpty()]
-    [string]$ApplicationFolder = 'Desktops\3. PROD',
-
-    [Parameter(Mandatory = $false)]
-    [ValidateNotNullOrEmpty()]
-    [string]$CollectionFolder = 'Desktops\Applications\3. PROD',
+    [string]$CollectionFolder = "",
 
     [Parameter(Mandatory = $false)]
     [int]$MaxRuntimeMins = 60,
@@ -136,11 +129,14 @@ $script:CreatedObjects = @{
     Deployments = @()
 }
 
-# Set default collection names based on AppName
-if (-not $InstallCollectionName) {
+# Set default names based on AppName if not provided
+if ([string]::IsNullOrWhiteSpace($DeploymentTypeName)) {
+    $DeploymentTypeName = "${AppName}_Install"
+}
+if ([string]::IsNullOrWhiteSpace($InstallCollectionName)) {
     $InstallCollectionName = $AppName
 }
-if (-not $UninstallCollectionName) {
+if ([string]::IsNullOrWhiteSpace($UninstallCollectionName)) {
     $UninstallCollectionName = "${AppName}_Uninstall"
 }
 
