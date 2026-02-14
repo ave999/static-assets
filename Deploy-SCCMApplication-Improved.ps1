@@ -398,69 +398,11 @@ function Initialize-SCCMEnvironment {
     )
 
     Invoke-Step -Name "Import ConfigurationManager module & connect to site" -Script {
-        Write-Log -Message "" -Level 'Info'
-        Write-Log -Message "=== MODULE IMPORT & CONNECTION ===" -Level 'Info'
-        Write-Log -Message "" -Level 'Info'
-
         # Import ConfigurationManager module
-        Write-Log -Message "Step 1: Importing ConfigurationManager module" -Level 'Info'
+        Import-Module ($env:SMS_ADMIN_UI_PATH.Substring(0, $env:SMS_ADMIN_UI_PATH.Length - 5) + '\ConfigurationManager.psd1') -ErrorAction Stop
 
-        try {
-            if ((Get-Module ConfigurationManager) -eq $null) {
-                # Use substring to remove last 5 chars (i386\) from SMS_ADMIN_UI_PATH
-                $modulePath = ($env:SMS_ADMIN_UI_PATH.Substring(0, $env:SMS_ADMIN_UI_PATH.Length - 5) + '\ConfigurationManager.psd1')
-                Import-Module $modulePath -ErrorAction Stop
-                Write-Log -Message "  Module imported successfully" -Level 'Info'
-            } else {
-                Write-Log -Message "  Module already loaded" -Level 'Info'
-            }
-        }
-        catch {
-            Write-Log -Message "  FAILED to import module: $_" -Level 'Error'
-            if ($_.Exception.InnerException) {
-                Write-Log -Message "  Inner exception: $($_.Exception.InnerException.Message)" -Level 'Error'
-            }
-            throw
-        }
-        Write-Log -Message "" -Level 'Info'
-
-        # Connect to the site's drive if it is not already present
-        Write-Log -Message "Step 2: Connecting to SCCM site drive" -Level 'Info'
-        Write-Log -Message "  Site Code: $SiteCode" -Level 'Info'
-        Write-Log -Message "  Provider: $SiteServer" -Level 'Info'
-
-        try {
-            $existingDrive = Get-PSDrive -Name $SiteCode -PSProvider CMSite -ErrorAction SilentlyContinue
-
-            if ($existingDrive -eq $null) {
-                Write-Log -Message "  Creating new PSDrive for site $SiteCode" -Level 'Info'
-                New-PSDrive -Name $SiteCode -PSProvider CMSite -Root $SiteServer -ErrorAction Stop | Out-Null
-                Write-Log -Message "  PSDrive created successfully" -Level 'Info'
-            } else {
-                Write-Log -Message "  PSDrive already exists (Root: $($existingDrive.Root))" -Level 'Info'
-            }
-        }
-        catch {
-            Write-Log -Message "  FAILED to create PSDrive: $_" -Level 'Error'
-            if ($_.Exception.InnerException) {
-                Write-Log -Message "  Inner exception: $($_.Exception.InnerException.Message)" -Level 'Error'
-            }
-            throw
-        }
-        Write-Log -Message "" -Level 'Info'
-
-        # Set the current location to be the site code
-        Write-Log -Message "Step 3: Switching to site drive ${SiteCode}:" -Level 'Info'
-        try {
-            Set-Location "${SiteCode}:\"
-            Write-Log -Message "  Successfully connected to site: $SiteCode" -Level 'Info'
-            Write-Log -Message "  Current location: $(Get-Location)" -Level 'Info'
-        }
-        catch {
-            Write-Log -Message "  FAILED to switch to site drive: $_" -Level 'Error'
-            throw
-        }
-        Write-Log -Message "" -Level 'Info'
+        # Set location to site drive
+        Set-Location "${SiteCode}:\" -ErrorAction Stop
     }
 }
 
