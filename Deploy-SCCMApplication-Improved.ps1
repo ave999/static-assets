@@ -437,7 +437,7 @@ function Initialize-SCCMEnvironment {
         # Find the site drive for our site code
         $cmDrive = $allCMDrives | Where-Object { $_.Name -eq $SiteCode } | Select-Object -First 1
         if (-not $cmDrive) {
-            Write-Log -Message "  Site drive '$SiteCode:' not found" -Level 'Warning'
+            Write-Log -Message "  Site drive '${SiteCode}:' not found" -Level 'Warning'
             Write-Log -Message "  Attempting to use first available drive: $($allCMDrives[0].Name)" -Level 'Info'
             $cmDrive = $allCMDrives[0]
         }
