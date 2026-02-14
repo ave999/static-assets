@@ -402,14 +402,18 @@ function Initialize-SCCMEnvironment {
         Write-Log -Message "=== MODULE IMPORT & CONNECTION ===" -Level 'Info'
         Write-Log -Message "" -Level 'Info'
 
-        # Import module (this auto-creates the site drive)
+        # Import ConfigurationManager module
         Write-Log -Message "Step 1: Importing ConfigurationManager module" -Level 'Info'
-        $modulePath = ($env:SMS_ADMIN_UI_PATH.Substring(0, $env:SMS_ADMIN_UI_PATH.Length - 5) + '\ConfigurationManager.psd1')
+        $modulePath = "$($env:SMS_ADMIN_UI_PATH)\..\ConfigurationManager.psd1"
         Write-Log -Message "  Module path: $modulePath" -Level 'Info'
 
         try {
-            Import-Module $modulePath -ErrorAction Stop
-            Write-Log -Message "  Module imported successfully" -Level 'Info'
+            if ((Get-Module ConfigurationManager) -eq $null) {
+                Import-Module $modulePath -ErrorAction Stop
+                Write-Log -Message "  Module imported successfully" -Level 'Info'
+            } else {
+                Write-Log -Message "  Module already loaded" -Level 'Info'
+            }
         }
         catch {
             Write-Log -Message "  FAILED to import module: $_" -Level 'Error'
@@ -420,41 +424,43 @@ function Initialize-SCCMEnvironment {
         }
         Write-Log -Message "" -Level 'Info'
 
-        # Check for site drives
-        Write-Log -Message "Step 2: Checking for SCCM site drives" -Level 'Info'
-        $allCMDrives = Get-PSDrive -PSProvider CMSITE -ErrorAction SilentlyContinue
-        if ($allCMDrives) {
-            Write-Log -Message "  Found $($allCMDrives.Count) CMSITE drive(s):" -Level 'Info'
-            foreach ($drive in $allCMDrives) {
-                Write-Log -Message "    - $($drive.Name): Root=$($drive.Root)" -Level 'Info'
+        # Connect to the site's drive if it is not already present
+        Write-Log -Message "Step 2: Connecting to SCCM site drive" -Level 'Info'
+        Write-Log -Message "  Site Code: $SiteCode" -Level 'Info'
+        Write-Log -Message "  Provider: $SiteServer" -Level 'Info'
+
+        try {
+            $existingDrive = Get-PSDrive -Name $SiteCode -PSProvider CMSite -ErrorAction SilentlyContinue
+
+            if ($existingDrive -eq $null) {
+                Write-Log -Message "  Creating new PSDrive for site $SiteCode" -Level 'Info'
+                New-PSDrive -Name $SiteCode -PSProvider CMSite -Root $SiteServer -ErrorAction Stop | Out-Null
+                Write-Log -Message "  PSDrive created successfully" -Level 'Info'
+            } else {
+                Write-Log -Message "  PSDrive already exists (Root: $($existingDrive.Root))" -Level 'Info'
             }
         }
-        else {
-            Write-Log -Message "  No CMSITE drives found" -Level 'Warning'
-            throw "No SCCM site drives available. Ensure SCCM is properly configured."
+        catch {
+            Write-Log -Message "  FAILED to create PSDrive: $_" -Level 'Error'
+            if ($_.Exception.InnerException) {
+                Write-Log -Message "  Inner exception: $($_.Exception.InnerException.Message)" -Level 'Error'
+            }
+            throw
         }
-
-        # Find the site drive for our site code
-        $cmDrive = $allCMDrives | Where-Object { $_.Name -eq $SiteCode } | Select-Object -First 1
-        if (-not $cmDrive) {
-            Write-Log -Message "  Site drive '${SiteCode}:' not found" -Level 'Warning'
-            Write-Log -Message "  Attempting to use first available drive: $($allCMDrives[0].Name)" -Level 'Info'
-            $cmDrive = $allCMDrives[0]
-        }
-        Write-Log -Message "  Using site drive: $($cmDrive.Name):" -Level 'Info'
         Write-Log -Message "" -Level 'Info'
 
-        # Switch to the site drive
-        Write-Log -Message "Step 3: Switching to site drive" -Level 'Info'
+        # Set the current location to be the site code
+        Write-Log -Message "Step 3: Switching to site drive ${SiteCode}:" -Level 'Info'
         try {
-            Push-Location "$($cmDrive.Name):"
-            Write-Log -Message "  Successfully connected to site: $($cmDrive.Name)" -Level 'Info'
+            Set-Location "${SiteCode}:\"
+            Write-Log -Message "  Successfully connected to site: $SiteCode" -Level 'Info'
             Write-Log -Message "  Current location: $(Get-Location)" -Level 'Info'
         }
         catch {
             Write-Log -Message "  FAILED to switch to site drive: $_" -Level 'Error'
             throw
         }
+        Write-Log -Message "" -Level 'Info'
     }
 }
 
@@ -821,6 +827,9 @@ function Move-CollectionsToFolder {
 #region Main Execution
 
 try {
+    # Save original location
+    $originalLocation = Get-Location
+
     Write-Log -Message "========================================" -Level 'Info'
     Write-Log -Message "SCCM Application Deployment Script" -Level 'Info'
     Write-Log -Message "Application: $AppName" -Level 'Info'
@@ -950,8 +959,13 @@ catch {
 }
 finally {
     # Return to original location
-    if ((Get-Location).Provider.Name -eq 'CMSite') {
-        Pop-Location
+    if ((Get-Location).Provider.Name -eq 'CMSite' -and $originalLocation) {
+        try {
+            Set-Location $originalLocation.Path
+        }
+        catch {
+            # Ignore errors when returning to original location
+        }
     }
 
     if ($LogFilePath) {
