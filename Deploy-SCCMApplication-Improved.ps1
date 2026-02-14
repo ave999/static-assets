@@ -408,7 +408,7 @@ function Initialize-SCCMEnvironment {
 
         # Import module (this auto-creates the site drive)
         Write-Log -Message "Step 1: Importing ConfigurationManager module" -Level 'Info'
-        $modulePath = ($env:SMS_ADMIN_UI_PATH.Substring(0, $env:SMS_ADMIN_UI_PATH.Length - 5) + 'ConfigurationManager.psd1')
+        $modulePath = ($env:SMS_ADMIN_UI_PATH.Substring(0, $env:SMS_ADMIN_UI_PATH.Length - 5) + '\ConfigurationManager.psd1')
         Write-Log -Message "  Module path: $modulePath" -Level 'Info'
 
         try {
