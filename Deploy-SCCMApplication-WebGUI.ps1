@@ -1,1124 +1,175 @@
-<#
-.SYNOPSIS
-    Web-based GUI for SCCM Application Deployment
+import React, { useEffect, useRef, useState } from 'react'
+import type { SessionEngine } from '../engine/SessionEngine'
+import type { ChunkPartialEvent, SegmentFinalEvent } from '../engine/types'
 
-.DESCRIPTION
-    Launches a web server providing an HTML interface for deploying SCCM applications.
-    Accessible from network on port 80.
-
-.NOTES
-    Author: Web GUI wrapper for Deploy-SCCMApplication-Improved.ps1
-    Version: 1.0
-    Requires: PowerShell 5.1+, Modern web browser
-#>
-
-[CmdletBinding()]
-param()
-
-$Port = 80  # Fixed port
-$ErrorActionPreference = 'Stop'
-
-# Get script directory
-$ScriptPath = Split-Path -Parent $PSCommandPath
-$DeploymentScript = Join-Path $ScriptPath "Deploy-SCCMApplication-Improved.ps1"
-
-# Check if deployment script exists
-if (-not (Test-Path $DeploymentScript)) {
-    Write-Error "Deploy-SCCMApplication-Improved.ps1 not found in the same folder!"
-    exit 1
+type UiSegment = {
+  id: string
+  text: string
+  timestamp: Date
+  isFinal: boolean
 }
 
-# Global variables for state management
-$script:LogMessages = @()
-$script:IsDeploying = $false
-$script:CurrentJobId = $null
-$script:CurrentLogFile = $null
+interface TranscriptDisplayProps {
+  engine: SessionEngine | null
+  isActive: boolean
+  // Optional upgrade later:
+  // sessionStartWallMs?: number
+}
 
-#region HTTP Server Functions
+export const TranscriptDisplay: React.FC<TranscriptDisplayProps> = ({ engine, isActive }) => {
+  const [segments, setSegments] = useState<UiSegment[]>([])
+  const containerRef = useRef<HTMLDivElement>(null)
+  const shouldAutoScroll = useRef(true)
 
-function Get-ContentType {
-    param([string]$Extension)
-
-    $contentTypes = @{
-        '.html' = 'text/html'
-        '.css'  = 'text/css'
-        '.js'   = 'application/javascript'
-        '.json' = 'application/json'
-        '.png'  = 'image/png'
-        '.jpg'  = 'image/jpeg'
-        '.ico'  = 'image/x-icon'
+  // Reset when a new transcription run starts
+  useEffect(() => {
+    if (isActive) {
+      setSegments([])
     }
+  }, [isActive])
 
-    $type = $contentTypes[$Extension]
-    if ($type) {
-        return $type
+  useEffect(() => {
+    if (shouldAutoScroll.current && containerRef.current) {
+      containerRef.current.scrollTop = containerRef.current.scrollHeight
     }
-    return 'text/plain'
-}
+  }, [segments])
 
-function Send-HttpResponse {
-    param(
-        [System.Net.HttpListenerContext]$Context,
-        [string]$Content,
-        [string]$ContentType = 'text/html',
-        [int]$StatusCode = 200
-    )
+  const handleScroll = () => {
+    if (!containerRef.current) return
 
-    $buffer = [System.Text.Encoding]::UTF8.GetBytes($Content)
-    $Context.Response.ContentLength64 = $buffer.Length
-    $Context.Response.ContentType = "$ContentType; charset=utf-8"
-    $Context.Response.StatusCode = $StatusCode
-    $Context.Response.OutputStream.Write($buffer, 0, $buffer.Length)
-    $Context.Response.OutputStream.Close()
-}
+    const { scrollTop, scrollHeight, clientHeight } = containerRef.current
+    const isAtBottom = Math.abs(scrollHeight - scrollTop - clientHeight) < 10
+    shouldAutoScroll.current = isAtBottom
+  }
 
-function Get-HTMLPage {
-    return @'
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SCCM Application Deployment Tool</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
+  const formatTime = (date: Date) => {
+    return date.toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    })
+  }
+
+  useEffect(() => {
+    if (!engine) return
+
+    // OPTION A: show low-latency chunk stream, with “Processing…” styling.
+    const offChunk = engine.on('chunk.partial', (evt: ChunkPartialEvent) => {
+      const newSeg: UiSegment = {
+        id: evt.chunk_id,
+        text: evt.text,
+        timestamp: new Date(), // or map from sessionStartWallMs + evt.t_end_ms
+        isFinal: false,
+      }
+
+      setSegments((prev) => {
+        // Replace last “processing” line to mimic your prior UX
+        if (prev.length > 0 && !prev[prev.length - 1].isFinal) {
+          return [...prev.slice(0, -1), newSeg]
         }
+        return [...prev, newSeg]
+      })
+    })
 
-        body {
-            font-family: "Segoe UI", Arial, sans-serif;
-            background-color: #f5f7f8;
-            color: #2d2d2d;
-            min-height: 100vh;
-            padding: 20px;
-            line-height: 1.6;
+    // OPTIONAL: finalize on segment boundaries so you “lock in” text
+    // If you enable this, you’ll see stable blocks (final) rather than only rolling partials.
+    const offSeg = engine.on('segment.final', (evt: SegmentFinalEvent) => {
+      const finalSeg: UiSegment = {
+        id: evt.segment_id,
+        text: evt.text,
+        timestamp: new Date(), // or map from sessionStartWallMs + evt.t_end_ms
+        isFinal: true,
+      }
+
+      setSegments((prev) => {
+        // If last item is non-final (processing), replace it with the final segment
+        if (prev.length > 0 && !prev[prev.length - 1].isFinal) {
+          return [...prev.slice(0, -1), finalSeg]
         }
+        return [...prev, finalSeg]
+      })
+    })
 
-        .container {
-            max-width: 1100px;
-            margin: 0 auto;
-            background: white;
-            border-radius: 8px;
-            box-shadow: 0px 2px 6px rgba(0,0,0,0.08);
-            overflow: hidden;
-        }
+    return () => {
+      offChunk()
+      offSeg()
+    }
+  }, [engine])
 
-        .header {
-            background-color: #00594c;
-            color: white;
-            padding: 40px 20px;
-            text-align: center;
-        }
-
-        .header h1 {
-            font-size: 28px;
-            margin-bottom: 10px;
-            color: white;
-            font-weight: 600;
-        }
-
-        .header p {
-            opacity: 0.95;
-            font-size: 14px;
-        }
-
-        .tabs {
-            display: flex;
-            background: #f5f5f5;
-            border-bottom: 2px solid #ddd;
-        }
-
-        .tab {
-            flex: 1;
-            padding: 15px;
-            text-align: center;
-            cursor: pointer;
-            background: #f5f5f5;
-            border: none;
-            font-size: 16px;
-            transition: all 0.2s ease;
-            font-weight: 600;
-        }
-
-        .tab:hover {
-            background: #e7f4f1;
-        }
-
-        .tab.active {
-            background: white;
-            border-bottom: 3px solid #008361;
-            color: #00594c;
-        }
-
-        .tab-content {
-            display: none;
-            padding: 30px;
-            animation: fadeIn 0.3s;
-        }
-
-        .tab-content.active {
-            display: block;
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
-        }
-
-        .form-group {
-            margin-bottom: 20px;
-        }
-
-        .form-group label {
-            display: block;
-            margin-bottom: 5px;
-            font-weight: 600;
-            color: #333;
-        }
-
-        .form-group input,
-        .form-group select,
-        .form-group textarea {
-            width: 100%;
-            padding: 10px;
-            border: 2px solid #ddd;
-            border-radius: 6px;
-            font-size: 14px;
-            transition: border-color 0.3s;
-        }
-
-        .form-group input:focus,
-        .form-group select:focus,
-        .form-group textarea:focus {
-            outline: none;
-            border-color: #008361;
-        }
-
-        .form-row {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 20px;
-        }
-
-        .checkbox-group {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .checkbox-group input[type="checkbox"] {
-            width: auto;
-        }
-
-        .fieldset {
-            border: 2px solid #ddd;
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 20px;
-            background: white;
-        }
-
-        .fieldset legend {
-            padding: 0 10px;
-            font-weight: 600;
-            color: #00594c;
-        }
-
-        .actions {
-            display: flex;
-            gap: 15px;
-            justify-content: center;
-            padding: 30px;
-            background: #f5f7f8;
-            border-top: 2px solid #ddd;
-        }
-
-        .btn {
-            padding: 12px 22px;
-            border: none;
-            border-radius: 4px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: background 0.2s ease;
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-
-        .btn-whatif {
-            background-color: transparent;
-            border: 2px solid #008361;
-            color: #008361;
-            padding: 10px 20px;
-        }
-
-        .btn-whatif:hover:not(:disabled) {
-            background-color: #e7f4f1;
-        }
-
-        .btn-deploy {
-            background-color: #008361;
-            color: white;
-        }
-
-        .btn-deploy:hover:not(:disabled) {
-            background-color: #006f4f;
-        }
-
-        .btn-stop {
-            background: #e74c3c;
-            color: white;
-        }
-
-        .btn-stop:hover:not(:disabled) {
-            background: #c0392b;
-        }
-
-        .log-container {
-            background: #1e1e1e;
-            color: #00ff00;
-            padding: 20px;
-            border-radius: 8px;
-            font-family: 'Consolas', 'Monaco', monospace;
-            font-size: 13px;
-            height: 500px;
-            overflow-y: auto;
-            white-space: pre-wrap;
-            word-wrap: break-word;
-        }
-
-        .log-controls {
-            margin-bottom: 15px;
-            display: flex;
-            gap: 10px;
-        }
-
-        .log-controls button {
-            padding: 8px 15px;
-            background: #008361;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-weight: 600;
-            transition: background 0.2s ease;
-        }
-
-        .log-controls button:hover {
-            background: #006f4f;
-        }
-
-        .status-badge {
-            display: inline-block;
-            padding: 5px 15px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: bold;
-            margin-left: 10px;
-        }
-
-        .status-ready {
-            background: #d4edda;
-            color: #155724;
-        }
-
-        .status-deploying {
-            background: #fff3cd;
-            color: #856404;
-        }
-
-        .status-success {
-            background: #d4edda;
-            color: #155724;
-        }
-
-        .status-error {
-            background: #f8d7da;
-            color: #721c24;
-        }
-
-        .help-text {
-            font-size: 12px;
-            color: #666;
-            margin-top: 5px;
-        }
-
-        .required::after {
-            content: " *";
-            color: red;
-        }
-
-        .input-error {
-            border-color: #e74c3c !important;
-            background-color: #fef5f5 !important;
-        }
-
-        .error-message {
-            color: #e74c3c;
-            font-size: 12px;
-            margin-top: 5px;
-            display: none;
-        }
-
-        .error-message.visible {
-            display: block;
-        }
-
-        .validation-summary {
-            background-color: #fef5f5;
-            border: 2px solid #e74c3c;
-            border-radius: 6px;
-            padding: 15px;
-            margin-bottom: 20px;
-            display: none;
-        }
-
-        .validation-summary.visible {
-            display: block;
-        }
-
-        .validation-summary h3 {
-            color: #e74c3c;
-            margin-bottom: 10px;
-            font-size: 16px;
-        }
-
-        .validation-summary ul {
-            margin: 0;
-            padding-left: 20px;
-        }
-
-        .validation-summary li {
-            color: #721c24;
-            margin-bottom: 5px;
-        }
-
-        .spinner {
-            display: inline-block;
-            width: 14px;
-            height: 14px;
-            border: 2px solid rgba(255,255,255,0.3);
-            border-radius: 50%;
-            border-top-color: white;
-            animation: spin 1s linear infinite;
-        }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>SCCM Application Deployment Tool</h1>
-            <p>Automated deployment with real-time monitoring</p>
-        </div>
-
-        <div class="tabs">
-            <button class="tab active" onclick="switchTab('config')">⚙️ Configuration</button>
-            <button class="tab" onclick="switchTab('options')">🔧 Options</button>
-            <button class="tab" onclick="switchTab('log')">📋 Execution Log</button>
-        </div>
-
-        <div id="config" class="tab-content active">
-            <h2>Application Configuration</h2>
-
-            <div id="validationSummary" class="validation-summary">
-                <h3>⚠️ Please fix the following errors:</h3>
-                <ul id="validationErrors"></ul>
+  return (
+    <div className="flex flex-col h-full">
+      <div
+        ref={containerRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto rounded-xl p-6 space-y-3 custom-scrollbar transition-all duration-300"
+        style={{
+          backgroundColor: 'var(--bg-tertiary)',
+          borderColor: 'var(--border-color)',
+          borderWidth: '1px',
+        }}
+      >
+        {segments.length === 0 ? (
+          <div className="text-center py-16">
+            <div className="inline-block">
+              <div className="flex items-center gap-3 mb-3">
+                <div
+                  className="h-8 w-8 border-4 rounded-full animate-spin"
+                  style={{
+                    borderColor: 'var(--accent-primary)',
+                    borderTopColor: 'transparent',
+                    opacity: 0.3,
+                  }}
+                ></div>
+                <p className="font-medium" style={{ color: 'var(--text-secondary)' }}>
+                  {isActive ? 'Analyzing audio stream...' : 'Ready to transcribe'}
+                </p>
+              </div>
+              <p className="text-sm" style={{ color: 'var(--text-tertiary)', opacity: 0.6 }}>
+                {isActive ? 'Waiting for speech input' : 'Click "Start Transcription" to begin'}
+              </p>
             </div>
-
-            <div class="form-row">
-                <div class="form-group">
-                    <label class="required">Application Name</label>
-                    <input type="text" id="appName" value="" placeholder="e.g., MyApp_v1.0">
-                    <div class="error-message" id="appName-error">Application Name is required</div>
-                    <div class="help-text">Unique name for the application in SCCM</div>
-                </div>
-
-                <div class="form-group">
-                    <label>Deployment Type Name</label>
-                    <input type="text" id="deployTypeName" value="" placeholder="e.g., MyApp_DEPLOY01">
-                </div>
+          </div>
+        ) : (
+          segments.map((segment, index) => (
+            <div
+              key={segment.id}
+              className="group flex gap-3 p-3 rounded-lg transition-all duration-300 hover:scale-[1.01]"
+              style={{
+                backgroundColor: segment.isFinal ? 'var(--bg-secondary)' : 'rgba(234, 179, 8, 0.05)',
+                borderColor: segment.isFinal ? 'var(--border-color)' : 'rgba(234, 179, 8, 0.2)',
+                borderWidth: '1px',
+                animation: !segment.isFinal ? 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite' : 'none',
+                animationDelay: `${index * 0.1}s`,
+              }}
+            >
+              <span
+                className="text-xs font-mono mt-1 shrink-0 px-2 py-1 rounded"
+                style={{
+                  color: 'var(--text-tertiary)',
+                  backgroundColor: 'var(--bg-tertiary)',
+                }}
+              >
+                {formatTime(segment.timestamp)}
+              </span>
+              <p
+                className="flex-1 leading-relaxed"
+                style={{
+                  color: segment.isFinal ? 'var(--text-primary)' : '#eab308',
+                  fontStyle: segment.isFinal ? 'normal' : 'italic',
+                  fontWeight: segment.isFinal ? 400 : 300,
+                }}
+              >
+                {segment.text}
+              </p>
+              {!segment.isFinal && (
+                <span className="text-xs mt-1" style={{ color: '#facc15' }}>
+                  Processing...
+                </span>
+              )}
             </div>
-
-            <div class="form-group">
-                <label>Description</label>
-                <input type="text" id="description" value="" placeholder="Application description">
-            </div>
-
-            <fieldset class="fieldset">
-                <legend>📁 Content Settings</legend>
-
-                <div class="form-group">
-                    <label class="required">Content Location (UNC Path)</label>
-                    <input type="text" id="contentLocation" value="" placeholder="\\server\share\folder">
-                    <div class="error-message" id="contentLocation-error">Content Location is required and must be a UNC path (\\server\share\folder)</div>
-                    <div class="help-text">Network path to application source files (type the full UNC path manually)</div>
-                </div>
-
-                <div class="form-row">
-                    <div class="form-group">
-                        <label class="required">Install Command</label>
-                        <input type="text" id="installCmd" value="" placeholder="setup.exe /silent">
-                        <div class="error-message" id="installCmd-error">Install Command is required</div>
-                    </div>
-
-                    <div class="form-group">
-                        <label>Uninstall Command</label>
-                        <input type="text" id="uninstallCmd" value="" placeholder="uninstall.exe /quiet">
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label>Maximum Runtime (minutes)</label>
-                    <input type="number" id="maxRuntime" value="60" min="1" max="720">
-                </div>
-            </fieldset>
-
-            <fieldset class="fieldset">
-                <legend>📦 Collections & Distribution</legend>
-
-                <div class="form-group">
-                    <label class="required">Limiting Collection</label>
-                    <input type="text" id="limitingCollection" value="" placeholder="All Desktop and Server Clients">
-                    <div class="error-message" id="limitingCollection-error">Limiting Collection is required</div>
-                </div>
-
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Install Collection</label>
-                        <input type="text" id="installCollection" placeholder="(defaults to Application Name)">
-                    </div>
-
-                    <div class="form-group">
-                        <label>Uninstall Collection</label>
-                        <input type="text" id="uninstallCollection" placeholder="(defaults to AppName_Uninstall)">
-                    </div>
-                </div>
-
-                <div class="form-group">
-                    <label class="required">Distribution Point Group</label>
-                    <input type="text" id="dpGroup" value="" placeholder="All Distribution Points">
-                    <div class="error-message" id="dpGroup-error">Distribution Point Group is required</div>
-                </div>
-            </fieldset>
-
-            <fieldset class="fieldset">
-                <legend>📂 Console Organization</legend>
-
-                <div class="form-row">
-                    <div class="form-group">
-                        <label>Application Folder Path</label>
-                        <input type="text" id="appFolder" value="" placeholder="Applications\Production">
-                    </div>
-
-                    <div class="form-group">
-                        <label>Collection Folder Path</label>
-                        <input type="text" id="collectionFolder" value="" placeholder="Collections\Applications\Production">
-                    </div>
-                </div>
-            </fieldset>
-        </div>
-
-        <div id="options" class="tab-content">
-            <h2>Deployment Options</h2>
-
-            <div class="form-group checkbox-group">
-                <input type="checkbox" id="enableLogging" checked>
-                <label for="enableLogging">Enable file logging</label>
-            </div>
-
-            <div class="form-group">
-                <label>Log File Path</label>
-                <input type="text" id="logPath" value="" placeholder="C:\Logs\deployment.log">
-                <div class="help-text">Full path to log file (e.g., C:\Logs\deployment.log). Leave empty to skip file logging.</div>
-            </div>
-
-            <div class="form-group checkbox-group">
-                <input type="checkbox" id="forceMode">
-                <label for="forceMode">Force mode (skip confirmation prompts)</label>
-            </div>
-
-            <div class="form-group checkbox-group">
-                <input type="checkbox" id="noRollback">
-                <label for="noRollback">Disable automatic rollback on failure</label>
-            </div>
-
-            <div class="form-group checkbox-group">
-                <input type="checkbox" id="verboseLogging" checked>
-                <label for="verboseLogging">Enable verbose logging (recommended during testing)</label>
-            </div>
-
-            <div class="form-group">
-                <label>Collection Creation Timeout (minutes)</label>
-                <input type="number" id="collectionTimeout" value="5" min="1" max="30">
-            </div>
-        </div>
-
-        <div id="log" class="tab-content">
-            <h2>Execution Log <span id="statusBadge" class="status-badge status-ready">Ready</span></h2>
-
-            <div class="log-controls">
-                <button onclick="clearLog()">Clear Log</button>
-                <button onclick="saveLog()">Save Log</button>
-                <button onclick="refreshLog()">Refresh</button>
-            </div>
-
-            <div id="logContainer" class="log-container">Ready to deploy. Configure your settings and click "Deploy" or "WhatIf" to begin.</div>
-        </div>
-
-        <div class="actions">
-            <button class="btn btn-whatif" id="btnWhatIf" onclick="startDeployment(true)">
-                🧪 WhatIf (Test Run)
-            </button>
-            <button class="btn btn-deploy" id="btnDeploy" onclick="startDeployment(false)">
-                🚀 Deploy
-            </button>
-        </div>
+          ))
+        )}
+      </div>
     </div>
-
-    <script>
-        let logRefreshInterval = null;
-        let validationErrors = {};
-
-        // Required fields configuration
-        const requiredFields = {
-            'appName': 'Application Name',
-            'contentLocation': 'Content Location',
-            'installCmd': 'Install Command',
-            'limitingCollection': 'Limiting Collection',
-            'dpGroup': 'Distribution Point Group'
-        };
-
-        function validateField(fieldId) {
-            const field = document.getElementById(fieldId);
-            const errorDiv = document.getElementById(fieldId + '-error');
-            const value = field.value.trim();
-            let isValid = true;
-            let errorMessage = '';
-
-            // Check if required field is empty
-            if (requiredFields[fieldId] && !value) {
-                isValid = false;
-                errorMessage = requiredFields[fieldId] + ' is required';
-            }
-
-            // Special validation for Content Location (must be UNC path)
-            if (fieldId === 'contentLocation' && value && !value.startsWith('\\\\')) {
-                isValid = false;
-                errorMessage = 'Content Location must be a UNC path (e.g., \\\\server\\share\\folder)';
-            }
-
-            // Update UI
-            if (isValid) {
-                field.classList.remove('input-error');
-                if (errorDiv) {
-                    errorDiv.classList.remove('visible');
-                }
-                delete validationErrors[fieldId];
-            } else {
-                field.classList.add('input-error');
-                if (errorDiv) {
-                    errorDiv.textContent = errorMessage;
-                    errorDiv.classList.add('visible');
-                }
-                validationErrors[fieldId] = errorMessage;
-            }
-
-            updateValidationSummary();
-            updateButtonStates();
-            return isValid;
-        }
-
-        function validateAllFields() {
-            validationErrors = {};
-            let allValid = true;
-
-            for (const fieldId in requiredFields) {
-                if (!validateField(fieldId)) {
-                    allValid = false;
-                }
-            }
-
-            return allValid;
-        }
-
-        function updateValidationSummary() {
-            const summary = document.getElementById('validationSummary');
-            const errorList = document.getElementById('validationErrors');
-            const errorCount = Object.keys(validationErrors).length;
-
-            if (errorCount > 0) {
-                errorList.innerHTML = '';
-                for (const fieldId in validationErrors) {
-                    const li = document.createElement('li');
-                    li.textContent = validationErrors[fieldId];
-                    errorList.appendChild(li);
-                }
-                summary.classList.add('visible');
-            } else {
-                summary.classList.remove('visible');
-            }
-        }
-
-        function updateButtonStates() {
-            const hasErrors = Object.keys(validationErrors).length > 0;
-            const isDeploying = document.getElementById('statusBadge').classList.contains('status-deploying');
-
-            document.getElementById('btnWhatIf').disabled = hasErrors || isDeploying;
-            document.getElementById('btnDeploy').disabled = hasErrors || isDeploying;
-        }
-
-        function switchTab(tabName) {
-            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-
-            // Find and activate the clicked tab
-            const tabs = document.querySelectorAll('.tab');
-            tabs.forEach(tab => {
-                if (tab.textContent.includes(tabName === 'config' ? 'Configuration' : tabName === 'options' ? 'Options' : 'Log')) {
-                    tab.classList.add('active');
-                }
-            });
-
-            document.getElementById(tabName).classList.add('active');
-
-            if (tabName === 'log') {
-                startLogRefresh();
-            } else {
-                stopLogRefresh();
-            }
-        }
-
-        function startLogRefresh() {
-            refreshLog();
-            if (!logRefreshInterval) {
-                logRefreshInterval = setInterval(refreshLog, 1000);
-            }
-        }
-
-        function stopLogRefresh() {
-            if (logRefreshInterval) {
-                clearInterval(logRefreshInterval);
-                logRefreshInterval = null;
-            }
-        }
-
-        function refreshLog() {
-            fetch('/api/logs')
-                .then(r => r.json())
-                .then(data => {
-                    const logContainer = document.getElementById('logContainer');
-                    const wasAtBottom = logContainer.scrollHeight - logContainer.scrollTop === logContainer.clientHeight;
-
-                    logContainer.textContent = data.logs.join('\n');
-
-                    if (wasAtBottom) {
-                        logContainer.scrollTop = logContainer.scrollHeight;
-                    }
-
-                    updateStatus(data.isDeploying);
-                });
-        }
-
-        function updateStatus(isDeploying) {
-            const badge = document.getElementById('statusBadge');
-
-            if (isDeploying) {
-                badge.className = 'status-badge status-deploying';
-                badge.innerHTML = '<span class="spinner"></span> Deploying...';
-            } else {
-                badge.className = 'status-badge status-ready';
-                badge.textContent = 'Ready';
-            }
-
-            updateButtonStates();
-        }
-
-        function clearLog() {
-            fetch('/api/clear-log', { method: 'POST' })
-                .then(() => refreshLog());
-        }
-
-        function saveLog() {
-            const logs = document.getElementById('logContainer').textContent;
-            const blob = new Blob([logs], { type: 'text/plain' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `sccm-deploy-${new Date().toISOString().replace(/:/g, '-')}.log`;
-            a.click();
-            URL.revokeObjectURL(url);
-        }
-
-        function validateInputs() {
-            // Validate all required fields
-            const allValid = validateAllFields();
-
-            // Additional validation for optional fields
-            const appFolder = document.getElementById('appFolder').value.trim();
-            const collFolder = document.getElementById('collectionFolder').value.trim();
-
-            if (appFolder && /[<>:"|?*]/.test(appFolder)) {
-                alert('Application Folder Path contains illegal characters (<>:"|?*)');
-                return false;
-            }
-
-            if (collFolder && /[<>:"|?*]/.test(collFolder)) {
-                alert('Collection Folder Path contains illegal characters (<>:"|?*)');
-                return false;
-            }
-
-            if (!allValid) {
-                // Switch to config tab to show errors
-                switchTab('config');
-                return false;
-            }
-
-            return true;
-        }
-
-        function getConfig() {
-            return {
-                AppName: document.getElementById('appName').value,
-                Description: document.getElementById('description').value,
-                SiteCode: 'CM0',  // Hardcoded
-                SiteServerFqdn: 'WAZEU2PRDDE051.corp.internal.citizensbank.com',  // Hardcoded
-                ContentLocation: document.getElementById('contentLocation').value,
-                InstallCommand: document.getElementById('installCmd').value,
-                UninstallCommand: document.getElementById('uninstallCmd').value,
-                DeploymentTypeName: document.getElementById('deployTypeName').value,
-                DPGroupName: document.getElementById('dpGroup').value,
-                LimitingCollectionName: document.getElementById('limitingCollection').value,
-                InstallCollectionName: document.getElementById('installCollection').value || null,
-                UninstallCollectionName: document.getElementById('uninstallCollection').value || null,
-                ApplicationFolder: document.getElementById('appFolder').value,
-                CollectionFolder: document.getElementById('collectionFolder').value,
-                MaxRuntimeMins: parseInt(document.getElementById('maxRuntime').value),
-                CollectionCreationTimeoutMinutes: parseInt(document.getElementById('collectionTimeout').value),
-                LogFilePath: document.getElementById('enableLogging').checked ? (document.getElementById('logPath').value.trim() || null) : null,
-                Force: document.getElementById('forceMode').checked,
-                NoRollback: document.getElementById('noRollback').checked,
-                VerboseLogging: document.getElementById('verboseLogging').checked
-            };
-        }
-
-        function startDeployment(whatIf) {
-            if (!validateInputs()) {
-                return;
-            }
-
-            const mode = whatIf ? 'WhatIf' : 'Deploy';
-            const confirmed = confirm(`Start deployment in ${mode} mode?\n\nApplication: ${document.getElementById('appName').value}\nSite: CM0 @ WAZEU2PRDDE051.corp.internal.citizensbank.com`);
-
-            if (!confirmed) {
-                return;
-            }
-
-            const config = getConfig();
-            config.WhatIf = whatIf;
-
-            fetch('/api/deploy', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(config)
-            })
-            .then(r => r.json())
-            .then(data => {
-                if (data.success) {
-                    switchTab('log');
-                    document.querySelector('.tab:nth-child(3)').click();
-                    startLogRefresh();
-                } else {
-                    alert('Failed to start deployment: ' + data.error);
-                }
-            })
-            .catch(err => {
-                alert('Error: ' + err);
-            });
-        }
-
-        // Initialize real-time validation and auto-refresh
-        document.addEventListener('DOMContentLoaded', () => {
-            // Add real-time validation listeners to required fields
-            for (const fieldId in requiredFields) {
-                const field = document.getElementById(fieldId);
-                if (field) {
-                    // Validate on blur (when user leaves the field)
-                    field.addEventListener('blur', () => validateField(fieldId));
-
-                    // Also validate on input for immediate feedback
-                    field.addEventListener('input', () => {
-                        // Only clear error on input, don't show new errors yet
-                        if (field.value.trim()) {
-                            validateField(fieldId);
-                        }
-                    });
-                }
-            }
-
-            // Initial validation to set button states
-            validateAllFields();
-
-            // Auto-refresh log when on log tab
-            const activeTab = document.querySelector('.tab-content.active');
-            if (activeTab && activeTab.id === 'log') {
-                startLogRefresh();
-            }
-        });
-    </script>
-</body>
-</html>
-'@
-}
-
-#endregion
-
-#region API Handlers
-
-function Handle-GetLogs {
-    param([System.Net.HttpListenerContext]$Context)
-
-    # Read logs from file if deployment is running
-    if ($script:CurrentJobId -and $script:CurrentLogFile) {
-        try {
-            $process = Get-Process -Id $script:CurrentJobId -ErrorAction SilentlyContinue
-
-            if (Test-Path $script:CurrentLogFile) {
-                # Read log file content
-                $content = Get-Content $script:CurrentLogFile -Raw -ErrorAction SilentlyContinue
-                if ($content) {
-                    $script:LogMessages = $content -split "`n"
-                }
-            }
-
-            # Check if process is still running
-            if (-not $process) {
-                $script:LogMessages += ""
-                $script:LogMessages += "========================================="
-                $script:LogMessages += "DEPLOYMENT PROCESS COMPLETED"
-                $script:LogMessages += "========================================="
-
-                $script:IsDeploying = $false
-                $script:CurrentJobId = $null
-            }
-        }
-        catch {
-            $script:LogMessages += "Error reading log: $_"
-        }
-    }
-
-    $response = @{
-        logs = $script:LogMessages
-        isDeploying = $script:IsDeploying
-    } | ConvertTo-Json
-
-    Send-HttpResponse -Context $Context -Content $response -ContentType 'application/json'
-}
-
-function Handle-ClearLog {
-    param([System.Net.HttpListenerContext]$Context)
-
-    $script:LogMessages = @()
-    $script:LogMessages += "Log cleared at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-
-    Send-HttpResponse -Context $Context -Content '{"success":true}' -ContentType 'application/json'
-}
-
-function Handle-Deploy {
-    param([System.Net.HttpListenerContext]$Context)
-
-    if ($script:IsDeploying) {
-        Send-HttpResponse -Context $Context -Content '{"success":false,"error":"Deployment already in progress"}' -ContentType 'application/json'
-        return
-    }
-
-    # Read request body
-    $reader = New-Object System.IO.StreamReader($Context.Request.InputStream)
-    $body = $reader.ReadToEnd()
-    $config = $body | ConvertFrom-Json
-
-    # Clear logs
-    $script:LogMessages = @()
-    $script:IsDeploying = $true
-
-    # Log the incoming request
-    $script:LogMessages += "=== WEB GUI REQUEST ==="
-    $script:LogMessages += "Timestamp: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
-    $script:LogMessages += "Mode: $(if ($config.WhatIf) { 'WhatIf' } else { 'Deploy' })"
-    $script:LogMessages += "Application: $($config.AppName)"
-    $script:LogMessages += "Site: $($config.SiteCode) @ $($config.SiteServerFqdn)"
-    $script:LogMessages += "Content: $($config.ContentLocation)"
-    $script:LogMessages += "Install Cmd: $($config.InstallCommand)"
-    $script:LogMessages += "Uninstall Cmd: $(if ($config.UninstallCommand) { $config.UninstallCommand } else { '(not provided)' })"
-    $script:LogMessages += "========================"
-    $script:LogMessages += ""
-
-    # Build parameters
-    $params = @{
-        AppName = $config.AppName
-        Description = $config.Description
-        SiteCode = $config.SiteCode
-        SiteServerFqdn = $config.SiteServerFqdn
-        ContentLocation = $config.ContentLocation
-        InstallCommand = $config.InstallCommand
-        UninstallCommand = $config.UninstallCommand
-        DeploymentTypeName = $config.DeploymentTypeName
-        DPGroupName = $config.DPGroupName
-        LimitingCollectionName = $config.LimitingCollectionName
-        ApplicationFolder = $config.ApplicationFolder
-        CollectionFolder = $config.CollectionFolder
-        MaxRuntimeMins = $config.MaxRuntimeMins
-        CollectionCreationTimeoutMinutes = $config.CollectionCreationTimeoutMinutes
-        Confirm = $false
-    }
-
-    if ($config.InstallCollectionName) { $params.InstallCollectionName = $config.InstallCollectionName }
-    if ($config.UninstallCollectionName) { $params.UninstallCollectionName = $config.UninstallCollectionName }
-    if ($config.LogFilePath -and $config.LogFilePath.Trim()) { $params.LogFilePath = $config.LogFilePath.Trim() }
-    if ($config.Force) { $params.Force = $true }
-    if ($config.NoRollback) { $params.NoRollback = $true }
-    if ($config.VerboseLogging) { $params.VerboseLogging = $true }
-    if ($config.WhatIf) { $params.WhatIf = $true }
-
-    # Create temporary log file for output
-    $script:CurrentLogFile = Join-Path $env:TEMP "sccm-deploy-$(Get-Date -Format 'yyyyMMdd-HHmmss').log"
-
-    # Build PowerShell command
-    $paramString = ($params.GetEnumerator() | ForEach-Object {
-        if ($_.Value -is [bool]) {
-            if ($_.Value) { "-$($_.Key)" }
-        } elseif ($_.Value -ne $null) {
-            "-$($_.Key) '$($_.Value -replace "'","''")'"
-        }
-    }) -join ' '
-
-    $psCommand = "& '$DeploymentScript' $paramString *>&1 | Tee-Object -FilePath '$script:CurrentLogFile'"
-
-    # Start deployment in new PowerShell process
-    $psi = New-Object System.Diagnostics.ProcessStartInfo
-    $psi.FileName = "powershell.exe"
-    $psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -Command `"$psCommand`""
-    $psi.UseShellExecute = $false
-    $psi.CreateNoWindow = $true
-
-    $process = [System.Diagnostics.Process]::Start($psi)
-    $script:CurrentJobId = $process.Id
-
-    # Add initial log message
-    $script:LogMessages += "Starting deployment process (ID: $($process.Id))..."
-    $script:LogMessages += "Log file: $script:CurrentLogFile"
-    $script:LogMessages += "Waiting for output..."
-
-    Send-HttpResponse -Context $Context -Content '{"success":true}' -ContentType 'application/json'
-}
-
-#endregion
-
-# Start HTTP listener
-$listener = New-Object System.Net.HttpListener
-
-# Bind to all network interfaces
-$listener.Prefixes.Add("http://+:$Port/")
-
-# Get local IP addresses
-$localIPs = Get-NetIPAddress -AddressFamily IPv4 |
-            Where-Object { $_.IPAddress -notmatch '^(127\.|169\.254\.)' } |
-            Select-Object -ExpandProperty IPAddress
-
-$primaryIP = $localIPs | Select-Object -First 1
-
-try {
-    $listener.Start()
-
-    Write-Host "========================================" -ForegroundColor Cyan
-    Write-Host "SCCM Deployment Web GUI Started" -ForegroundColor Green
-    Write-Host "========================================" -ForegroundColor Cyan
-    Write-Host ""
-    Write-Host "Server is accessible from network:" -ForegroundColor Yellow
-    Write-Host "  Local:   http://localhost:$Port" -ForegroundColor White
-    if ($primaryIP) {
-        Write-Host "  Network: http://${primaryIP}:$Port" -ForegroundColor White
-    }
-    foreach ($ip in $localIPs) {
-        if ($ip -ne $primaryIP) {
-            Write-Host "           http://${ip}:$Port" -ForegroundColor Gray
-        }
-    }
-    Write-Host ""
-    Write-Host "IMPORTANT: Ensure Windows Firewall allows port $Port" -ForegroundColor Yellow
-    Write-Host "Run this command as Administrator to open the port:" -ForegroundColor Gray
-    Write-Host "  New-NetFirewallRule -DisplayName 'SCCM Web GUI' -Direction Inbound -LocalPort $Port -Protocol TCP -Action Allow" -ForegroundColor Cyan
-    Write-Host ""
-    Write-Host "Press Ctrl+C to stop the server" -ForegroundColor Gray
-    Write-Host "========================================" -ForegroundColor Cyan
-    Write-Host ""
-
-    # Try to open browser (only on localhost)
-    Start-Process "http://localhost:$Port"
-
-    while ($listener.IsListening) {
-        $context = $listener.GetContext()
-        $request = $context.Request
-        $response = $context.Response
-
-        try {
-            $path = $request.Url.LocalPath
-
-            switch -Regex ($path) {
-                '^/$' {
-                    $html = Get-HTMLPage
-                    Send-HttpResponse -Context $context -Content $html -ContentType 'text/html'
-                }
-                '^/api/logs$' {
-                    Handle-GetLogs -Context $context
-                }
-                '^/api/clear-log$' {
-                    Handle-ClearLog -Context $context
-                }
-                '^/api/deploy$' {
-                    Handle-Deploy -Context $context
-                }
-                default {
-                    Send-HttpResponse -Context $context -Content '404 Not Found' -StatusCode 404
-                }
-            }
-        }
-        catch {
-            Write-Host "Error handling request: $_" -ForegroundColor Red
-            Send-HttpResponse -Context $context -Content "Error: $_" -StatusCode 500
-        }
-    }
-}
-catch {
-    Write-Host "Error starting server: $_" -ForegroundColor Red
-    exit 1
-}
-finally {
-    if ($listener.IsListening) {
-        $listener.Stop()
-    }
-    $listener.Close()
-
-    # Clean up any running processes
-    if ($script:CurrentJobId) {
-        try {
-            Stop-Process -Id $script:CurrentJobId -Force -ErrorAction SilentlyContinue
-        }
-        catch {
-            # Process may have already exited
-        }
-    }
-
-    Write-Host "`nServer stopped." -ForegroundColor Yellow
+  )
 }
