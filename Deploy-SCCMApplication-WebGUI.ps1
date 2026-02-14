@@ -1003,11 +1003,13 @@ function Handle-Deploy {
     if ($config.VerboseLogging) { $params.VerboseLogging = $true }
     if ($config.WhatIf) { $params.WhatIf = $true }
 
-    # Start deployment in background
+    # Start deployment in background (pass environment variables to job)
     $job = Start-Job -ScriptBlock {
-        param($ScriptPath, $Params)
+        param($ScriptPath, $Params, $SmsAdminUiPath)
+        # Set environment variable in job session
+        $env:SMS_ADMIN_UI_PATH = $SmsAdminUiPath
         & $ScriptPath @Params 2>&1
-    } -ArgumentList $DeploymentScript, $params
+    } -ArgumentList $DeploymentScript, $params, $env:SMS_ADMIN_UI_PATH
 
     # Store job ID (not the object)
     $script:CurrentJobId = $job.Id
