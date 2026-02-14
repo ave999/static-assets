@@ -404,11 +404,11 @@ function Initialize-SCCMEnvironment {
 
         # Import ConfigurationManager module
         Write-Log -Message "Step 1: Importing ConfigurationManager module" -Level 'Info'
-        $modulePath = "$($env:SMS_ADMIN_UI_PATH)\..\ConfigurationManager.psd1"
-        Write-Log -Message "  Module path: $modulePath" -Level 'Info'
 
         try {
             if ((Get-Module ConfigurationManager) -eq $null) {
+                # Use substring to remove last 5 chars (i386\) from SMS_ADMIN_UI_PATH
+                $modulePath = ($env:SMS_ADMIN_UI_PATH.Substring(0, $env:SMS_ADMIN_UI_PATH.Length - 5) + '\ConfigurationManager.psd1')
                 Import-Module $modulePath -ErrorAction Stop
                 Write-Log -Message "  Module imported successfully" -Level 'Info'
             } else {
