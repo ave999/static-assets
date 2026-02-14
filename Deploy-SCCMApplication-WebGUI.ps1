@@ -32,6 +32,7 @@ if (-not (Test-Path $DeploymentScript)) {
 $script:LogMessages = @()
 $script:IsDeploying = $false
 $script:CurrentJobId = $null
+$script:CurrentLogFile = $null
 
 #region HTTP Server Functions
 
@@ -888,45 +889,32 @@ function Get-HTMLPage {
 function Handle-GetLogs {
     param([System.Net.HttpListenerContext]$Context)
 
-    # Collect logs from active job if running
-    if ($script:CurrentJobId -and (Get-Job -Id $script:CurrentJobId -ErrorAction SilentlyContinue)) {
-        $job = Get-Job -Id $script:CurrentJobId
+    # Read logs from file if deployment is running
+    if ($script:CurrentJobId -and $script:CurrentLogFile) {
+        try {
+            $process = Get-Process -Id $script:CurrentJobId -ErrorAction SilentlyContinue
 
-        # Get any new output from the job
-        $output = Receive-Job -Id $script:CurrentJobId -Keep
-        if ($output) {
-            # Clear and rebuild log from job output
-            $script:LogMessages = @()
-            foreach ($line in $output) {
-                $timestamp = Get-Date -Format 'HH:mm:ss'
-                $script:LogMessages += "[$timestamp] $line"
-            }
-        }
-
-        # Check if job finished
-        if ($job.State -ne 'Running') {
-            # Get final output
-            $finalOutput = Receive-Job -Id $script:CurrentJobId
-            if ($finalOutput) {
-                $script:LogMessages = @()
-                foreach ($line in $finalOutput) {
-                    $timestamp = Get-Date -Format 'HH:mm:ss'
-                    $script:LogMessages += "[$timestamp] $line"
+            if (Test-Path $script:CurrentLogFile) {
+                # Read log file content
+                $content = Get-Content $script:CurrentLogFile -Raw -ErrorAction SilentlyContinue
+                if ($content) {
+                    $script:LogMessages = $content -split "`n"
                 }
             }
 
-            $script:LogMessages += ""
-            $script:LogMessages += "========================================="
-            if ($job.State -eq 'Completed') {
-                $script:LogMessages += "DEPLOYMENT COMPLETED"
-            } else {
-                $script:LogMessages += "DEPLOYMENT FAILED OR WAS INTERRUPTED (State: $($job.State))"
-            }
-            $script:LogMessages += "========================================="
+            # Check if process is still running
+            if (-not $process) {
+                $script:LogMessages += ""
+                $script:LogMessages += "========================================="
+                $script:LogMessages += "DEPLOYMENT PROCESS COMPLETED"
+                $script:LogMessages += "========================================="
 
-            Remove-Job -Id $script:CurrentJobId -Force -ErrorAction SilentlyContinue
-            $script:IsDeploying = $false
-            $script:CurrentJobId = $null
+                $script:IsDeploying = $false
+                $script:CurrentJobId = $null
+            }
+        }
+        catch {
+            $script:LogMessages += "Error reading log: $_"
         }
     }
 
@@ -1003,19 +991,33 @@ function Handle-Deploy {
     if ($config.VerboseLogging) { $params.VerboseLogging = $true }
     if ($config.WhatIf) { $params.WhatIf = $true }
 
-    # Start deployment in background (pass environment variables to job)
-    $job = Start-Job -ScriptBlock {
-        param($ScriptPath, $Params, $SmsAdminUiPath)
-        # Set environment variable in job session
-        $env:SMS_ADMIN_UI_PATH = $SmsAdminUiPath
-        & $ScriptPath @Params 2>&1
-    } -ArgumentList $DeploymentScript, $params, $env:SMS_ADMIN_UI_PATH
+    # Create temporary log file for output
+    $script:CurrentLogFile = Join-Path $env:TEMP "sccm-deploy-$(Get-Date -Format 'yyyyMMdd-HHmmss').log"
 
-    # Store job ID (not the object)
-    $script:CurrentJobId = $job.Id
+    # Build PowerShell command
+    $paramString = ($params.GetEnumerator() | ForEach-Object {
+        if ($_.Value -is [bool]) {
+            if ($_.Value) { "-$($_.Key)" }
+        } elseif ($_.Value -ne $null) {
+            "-$($_.Key) '$($_.Value -replace "'","''")'"
+        }
+    }) -join ' '
+
+    $psCommand = "& '$DeploymentScript' $paramString *>&1 | Tee-Object -FilePath '$script:CurrentLogFile'"
+
+    # Start deployment in new PowerShell process
+    $psi = New-Object System.Diagnostics.ProcessStartInfo
+    $psi.FileName = "powershell.exe"
+    $psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -Command `"$psCommand`""
+    $psi.UseShellExecute = $false
+    $psi.CreateNoWindow = $true
+
+    $process = [System.Diagnostics.Process]::Start($psi)
+    $script:CurrentJobId = $process.Id
 
     # Add initial log message
-    $script:LogMessages += "Starting deployment job (ID: $($job.Id))..."
+    $script:LogMessages += "Starting deployment process (ID: $($process.Id))..."
+    $script:LogMessages += "Log file: $script:CurrentLogFile"
     $script:LogMessages += "Waiting for output..."
 
     Send-HttpResponse -Context $Context -Content '{"success":true}' -ContentType 'application/json'
@@ -1108,10 +1110,14 @@ finally {
     }
     $listener.Close()
 
-    # Clean up any running jobs
+    # Clean up any running processes
     if ($script:CurrentJobId) {
-        Stop-Job -Id $script:CurrentJobId -ErrorAction SilentlyContinue
-        Remove-Job -Id $script:CurrentJobId -Force -ErrorAction SilentlyContinue
+        try {
+            Stop-Process -Id $script:CurrentJobId -Force -ErrorAction SilentlyContinue
+        }
+        catch {
+            # Process may have already exited
+        }
     }
 
     Write-Host "`nServer stopped." -ForegroundColor Yellow
