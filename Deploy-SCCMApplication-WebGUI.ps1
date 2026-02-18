@@ -1161,9 +1161,14 @@ function Invoke-SCCMDeployment {
         }
 
         #--- Connect to SCCM site ---
-        # Module is already imported at script startup (before the HTTP runspace was created),
-        # so we only need to set the working location here.
+        # Import-Module registers the CMSite PS provider but does not always auto-create
+        # the PSDrive (it normally would, but only if WMI site enumeration succeeds during
+        # import). Explicitly creating the drive if it doesn't exist is reliable in all cases.
         Invoke-Step -Name "Connect to SCCM site $SiteCode" -Script {
+            if (-not (Get-PSDrive -Name $SiteCode -PSProvider CMSite -ErrorAction SilentlyContinue)) {
+                Write-Log "CMSite drive not found — creating CM0: -> $SiteServerFqdn"
+                New-PSDrive -Name $SiteCode -PSProvider CMSite -Root $SiteServerFqdn -ErrorAction Stop | Out-Null
+            }
             Set-Location "$($SiteCode):\" -ErrorAction Stop
         }
 
