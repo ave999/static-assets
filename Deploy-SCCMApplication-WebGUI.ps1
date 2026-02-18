@@ -558,6 +558,7 @@ $HttpServerBlock = {
                 <button onclick="clearLog()">Clear Log</button>
                 <button onclick="saveLog()">Save Log</button>
                 <button onclick="refreshLog()">Refresh</button>
+                <button onclick="forceReset()" id="btnReset" style="background:#e74c3c;display:none;" title="Use if the deployment is stuck and the script is no longer responding">Force Reset</button>
             </div>
 
             <div id="logContainer" class="log-container">Ready to deploy. Configure your settings and click "Deploy" or "WhatIf" to begin.</div>
@@ -719,16 +720,29 @@ $HttpServerBlock = {
 
         function updateStatus(isDeploying) {
             const badge = document.getElementById('statusBadge');
+            const resetBtn = document.getElementById('btnReset');
 
             if (isDeploying) {
                 badge.className = 'status-badge status-deploying';
                 badge.innerHTML = '<span class="spinner"></span> Deploying...';
+                if (resetBtn) resetBtn.style.display = 'inline-block';
             } else {
                 badge.className = 'status-badge status-ready';
                 badge.textContent = 'Ready';
+                if (resetBtn) resetBtn.style.display = 'none';
             }
 
             updateButtonStates();
+        }
+
+        function forceReset() {
+            if (!confirm('Force-reset the deployment state?\n\nOnly use this if the script crashed or was killed mid-deployment and the UI is stuck showing "Deploying...". This does NOT undo any SCCM changes already made.')) {
+                return;
+            }
+            fetch('/api/reset', { method: 'POST' })
+                .then(r => r.json())
+                .then(() => refreshLog())
+                .catch(err => alert('Reset failed: ' + err));
         }
 
         function clearLog() {
@@ -907,6 +921,16 @@ $HttpServerBlock = {
                     '^/api/clear-log$' {
                         $SharedState.LogMessages.Clear()
                         [void]$SharedState.LogMessages.Add("Log cleared at $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')")
+                        Send-HttpResponse -Context $context -Content '{"success":true}' -ContentType 'application/json'
+                    }
+
+                    '^/api/reset$' {
+                        # Clears a stuck IsDeploying flag — use when the script crashed
+                        # or was killed mid-deployment and the UI is frozen on "Deploying..."
+                        $SharedState.IsDeploying   = $false
+                        $SharedState.DeployRequest = $null
+                        [void]$SharedState.LogMessages.Add("")
+                        [void]$SharedState.LogMessages.Add("$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') [WARN] Deployment state was manually reset. Verify SCCM console for any partial changes.")
                         Send-HttpResponse -Context $context -Content '{"success":true}' -ContentType 'application/json'
                     }
 
