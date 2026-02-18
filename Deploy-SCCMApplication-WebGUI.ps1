@@ -1129,16 +1129,8 @@ function Invoke-SCCMDeployment {
             Write-Log "Current User: $env:USERNAME"
             Write-Log "Current Computer: $env:COMPUTERNAME"
 
-            if (-not $env:SMS_ADMIN_UI_PATH) {
-                throw "SMS_ADMIN_UI_PATH environment variable not found. Ensure ConfigMgr console is installed."
-            }
             Write-Log "SMS_ADMIN_UI_PATH: $env:SMS_ADMIN_UI_PATH"
-
-            $modulePath = $env:SMS_ADMIN_UI_PATH.Substring(0, $env:SMS_ADMIN_UI_PATH.Length - 5) + '\ConfigurationManager.psd1'
-            if (-not (Test-Path $modulePath)) {
-                throw "ConfigurationManager module not found at: $modulePath"
-            }
-            Write-Log "ConfigMgr module found"
+            Write-Log "ConfigMgr module loaded (imported at startup)"
 
             Write-Log "Checking content location: $ContentLocation"
             if (-not (Test-Path $ContentLocation -PathType Container)) {
@@ -1168,11 +1160,9 @@ function Invoke-SCCMDeployment {
             }
         }
 
-        #--- Import SCCM Module & Connect (user's exact working code) ---
-        Invoke-Step -Name "Import ConfigurationManager module" -Script {
-            Import-Module ($Env:SMS_ADMIN_UI_PATH.Substring(0, $Env:SMS_ADMIN_UI_PATH.Length - 5) + '\ConfigurationManager.psd1') -ErrorAction Stop
-        }
-
+        #--- Connect to SCCM site ---
+        # Module is already imported at script startup (before the HTTP runspace was created),
+        # so we only need to set the working location here.
         Invoke-Step -Name "Connect to SCCM site $SiteCode" -Script {
             Set-Location "$($SiteCode):\" -ErrorAction Stop
         }
@@ -1488,6 +1478,35 @@ function Invoke-SCCMDeployment {
         }
     }
 }
+
+#endregion
+
+#region Import ConfigurationManager Module (must happen before ANY runspace is created)
+#
+# The CM module initialises its SMS WMI provider via System.Management.ManagementScope.
+# That initialisation succeeds only while the process is in a pure STA context — i.e.
+# before we launch the HTTP runspace thread (which is MTA by default).
+# Importing here, on the main thread, before any background thread exists, is the
+# only reliable way to get WMI to initialise cleanly.
+
+Write-Host "Importing ConfigurationManager module..." -ForegroundColor Cyan
+
+if (-not $env:SMS_ADMIN_UI_PATH) {
+    Write-Host "ERROR: SMS_ADMIN_UI_PATH is not set. Is the ConfigMgr console installed?" -ForegroundColor Red
+    exit 1
+}
+
+$cmModulePath = $env:SMS_ADMIN_UI_PATH.Substring(0, $env:SMS_ADMIN_UI_PATH.Length - 5) + '\ConfigurationManager.psd1'
+
+if (-not (Test-Path $cmModulePath)) {
+    Write-Host "ERROR: ConfigurationManager module not found at: $cmModulePath" -ForegroundColor Red
+    exit 1
+}
+
+Import-Module $cmModulePath -ErrorAction Stop
+
+Write-Host "ConfigurationManager module imported." -ForegroundColor Green
+Write-Host ""
 
 #endregion
 
