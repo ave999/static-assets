@@ -1,39 +1,595 @@
 <#
 .SYNOPSIS
-    Web-based GUI for SCCM Application Deployment
+    Consolidated Web-based GUI for SCCM Application Deployment
 
 .DESCRIPTION
     Launches a web server providing an HTML interface for deploying SCCM applications.
+    All deployment logic is embedded — no external script dependency required.
     Accessible from network on port 80.
 
 .NOTES
-    Author: Web GUI wrapper for Deploy-SCCMApplication-Improved.ps1
-    Version: 1.0
-    Requires: PowerShell 5.1+, Modern web browser
+    Author: Consolidated from Deploy-SCCMApplication-Improved.ps1 + Web GUI
+    Version: 2.0
+    Requires: PowerShell 5.1+, ConfigurationManager module, Modern web browser
 #>
 
 [CmdletBinding()]
 param()
 
-$Port = 80  # Fixed port
+$Port = 80
 $ErrorActionPreference = 'Stop'
 
-# Get script directory
-$ScriptPath = Split-Path -Parent $PSCommandPath
-$DeploymentScript = Join-Path $ScriptPath "Deploy-SCCMApplication-Improved.ps1"
-
-# Check if deployment script exists
-if (-not (Test-Path $DeploymentScript)) {
-    Write-Error "Deploy-SCCMApplication-Improved.ps1 not found in the same folder!"
-    exit 1
-}
+# Hardcoded SCCM settings
+$script:SiteCode = 'CM0'
+$script:SiteServer = 'WAZEU2PRDDE051.corp.internal.citizensbank.com'
 
 # Global variables for state management
 $script:LogMessages = @()
 $script:IsDeploying = $false
-$script:CurrentJobId = $null
 $script:CurrentRunspace = $null
 $script:CurrentAsyncResult = $null
+$script:OutputCollection = $null
+
+#region Deployment Logic (runs inside a runspace)
+
+$script:DeploymentScriptBlock = {
+    param([hashtable]$Config)
+
+    # Extract parameters from config hashtable
+    $AppName                          = $Config.AppName
+    $Description                      = if ($Config.Description) { $Config.Description } else { "" }
+    $SiteCode                         = $Config.SiteCode
+    $SiteServerFqdn                   = $Config.SiteServerFqdn
+    $ContentLocation                  = $Config.ContentLocation
+    $InstallCommand                   = $Config.InstallCommand
+    $UninstallCommand                 = if ($Config.UninstallCommand) { $Config.UninstallCommand } else { "" }
+    $DeploymentTypeName               = $Config.DeploymentTypeName
+    $DPGroupName                      = $Config.DPGroupName
+    $LimitingCollectionName           = $Config.LimitingCollectionName
+    $InstallCollectionName            = $Config.InstallCollectionName
+    $UninstallCollectionName          = $Config.UninstallCollectionName
+    $ApplicationFolder                = if ($Config.ApplicationFolder) { $Config.ApplicationFolder } else { "" }
+    $CollectionFolder                 = if ($Config.CollectionFolder) { $Config.CollectionFolder } else { "" }
+    $MaxRuntimeMins                   = if ($Config.MaxRuntimeMins) { $Config.MaxRuntimeMins } else { 60 }
+    $CollectionCreationTimeoutMinutes = if ($Config.CollectionCreationTimeoutMinutes) { $Config.CollectionCreationTimeoutMinutes } else { 5 }
+    $LogFilePath                      = $Config.LogFilePath
+    $Force                            = [bool]$Config.Force
+    $NoRollback                       = [bool]$Config.NoRollback
+    $VerboseLogging                   = [bool]$Config.VerboseLogging
+    $WhatIf                           = [bool]$Config.WhatIf
+
+    $ErrorActionPreference = 'Stop'
+
+    # Auto-generate names based on AppName if not provided
+    if ([string]::IsNullOrWhiteSpace($DeploymentTypeName)) {
+        $DeploymentTypeName = "${AppName}_Install"
+    }
+    if ([string]::IsNullOrWhiteSpace($InstallCollectionName)) {
+        $InstallCollectionName = $AppName
+    }
+    if ([string]::IsNullOrWhiteSpace($UninstallCollectionName)) {
+        $UninstallCollectionName = "${AppName}_Uninstall"
+    }
+
+    # Track created objects for rollback
+    $createdObjects = @{
+        Application = $null
+        Collections = @()
+        Deployments = @()
+    }
+
+    #--- Logging ---
+    function Write-Log {
+        param(
+            [string]$Message = "",
+            [ValidateSet('Info', 'Success', 'Warning', 'Error', 'Step')]
+            [string]$Level = 'Info'
+        )
+
+        if ([string]::IsNullOrWhiteSpace($Message)) {
+            Write-Output ""
+            return
+        }
+
+        $timestamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+
+        switch ($Level) {
+            'Step'    { Write-Output "[$timestamp] [STEP] $Message" }
+            'Success' { Write-Output "[$timestamp] [ OK ] $Message" }
+            'Warning' { Write-Output "[$timestamp] [WARN] $Message" }
+            'Error'   { Write-Output "[$timestamp] [FAIL] $Message" }
+            default   { Write-Output "[$timestamp] [INFO] $Message" }
+        }
+
+        # File output if specified
+        if ($LogFilePath) {
+            try {
+                "[$timestamp] [$Level] $Message" | Out-File -FilePath $LogFilePath -Append -ErrorAction SilentlyContinue
+            } catch {}
+        }
+    }
+
+    function Invoke-Step {
+        param(
+            [string]$Name,
+            [scriptblock]$Script,
+            [switch]$ContinueOnError
+        )
+
+        Write-Log -Message $Name -Level 'Step'
+
+        try {
+            if ($VerboseLogging) {
+                $verboseOutput = & $Script 4>&1 3>&1 2>&1
+                foreach ($line in $verboseOutput) {
+                    if ($line) { Write-Log -Message "  [VERBOSE] $line" -Level 'Info' }
+                }
+            } else {
+                $null = & $Script
+            }
+            Write-Log -Message "$Name completed." -Level 'Success'
+        }
+        catch {
+            Write-Log -Message "$Name failed." -Level 'Error'
+            Write-Log -Message "Error: $_" -Level 'Error'
+            if ($_.Exception.InnerException) {
+                Write-Log -Message "InnerException: $($_.Exception.InnerException)" -Level 'Error'
+            }
+            if (-not $ContinueOnError) { throw }
+        }
+    }
+
+    #--- Rollback ---
+    function Invoke-Rollback {
+        if ($NoRollback) {
+            Write-Log "Rollback disabled by parameter. Manual cleanup required." -Level 'Warning'
+            return
+        }
+
+        Write-Log "Initiating rollback of created objects..." -Level 'Warning'
+
+        foreach ($deployment in $createdObjects.Deployments) {
+            try {
+                Write-Log "Removing deployment: $deployment" -Level 'Info'
+                Remove-CMApplicationDeployment -DeploymentId $deployment -Force -ErrorAction Stop
+            } catch {
+                Write-Log "Failed to remove deployment ${deployment}: $_" -Level 'Error'
+            }
+        }
+
+        foreach ($collection in $createdObjects.Collections) {
+            try {
+                Write-Log "Removing collection: $collection" -Level 'Info'
+                Remove-CMDeviceCollection -Name $collection -Force -ErrorAction Stop
+            } catch {
+                Write-Log "Failed to remove collection ${collection}: $_" -Level 'Error'
+            }
+        }
+
+        if ($createdObjects.Application) {
+            try {
+                Write-Log "Removing application: $($createdObjects.Application)" -Level 'Info'
+                Remove-CMApplication -Name $createdObjects.Application -Force -ErrorAction Stop
+            } catch {
+                Write-Log "Failed to remove application: $_" -Level 'Error'
+            }
+        }
+
+        Write-Log "Rollback completed. Verify SCCM console for any remaining objects." -Level 'Warning'
+    }
+
+    #--- Main Deployment Execution ---
+    try {
+        $originalLocation = Get-Location
+
+        Write-Log "========================================" -Level 'Info'
+        Write-Log "SCCM Application Deployment Script" -Level 'Info'
+        Write-Log "Application: $AppName" -Level 'Info'
+        Write-Log "Site: $SiteCode ($SiteServerFqdn)" -Level 'Info'
+        Write-Log "========================================" -Level 'Info'
+
+        if ($WhatIf) {
+            Write-Log "Running in WhatIf mode - no changes will be made" -Level 'Warning'
+        }
+
+        # Parameter summary
+        if ($VerboseLogging -or $WhatIf) {
+            Write-Log ""
+            Write-Log "=== PARAMETER VALUES ===" -Level 'Info'
+            Write-Log "AppName: $AppName" -Level 'Info'
+            Write-Log "Description: $Description" -Level 'Info'
+            Write-Log "SiteCode: $SiteCode" -Level 'Info'
+            Write-Log "SiteServerFqdn: $SiteServerFqdn" -Level 'Info'
+            Write-Log "ContentLocation: $ContentLocation" -Level 'Info'
+            Write-Log "InstallCommand: $InstallCommand" -Level 'Info'
+            Write-Log "UninstallCommand: $UninstallCommand" -Level 'Info'
+            Write-Log "DeploymentTypeName: $DeploymentTypeName" -Level 'Info'
+            Write-Log "DPGroupName: $DPGroupName" -Level 'Info'
+            Write-Log "LimitingCollectionName: $LimitingCollectionName" -Level 'Info'
+            Write-Log "InstallCollectionName: $InstallCollectionName" -Level 'Info'
+            Write-Log "UninstallCollectionName: $UninstallCollectionName" -Level 'Info'
+            Write-Log "ApplicationFolder: $ApplicationFolder" -Level 'Info'
+            Write-Log "CollectionFolder: $CollectionFolder" -Level 'Info'
+            Write-Log "MaxRuntimeMins: $MaxRuntimeMins" -Level 'Info'
+            Write-Log "LogFilePath: $LogFilePath" -Level 'Info'
+            Write-Log "Force: $Force" -Level 'Info'
+            Write-Log "NoRollback: $NoRollback" -Level 'Info'
+            Write-Log "WhatIf: $WhatIf" -Level 'Info'
+            Write-Log "VerboseLogging: $VerboseLogging" -Level 'Info'
+            Write-Log "=======================" -Level 'Info'
+            Write-Log ""
+        }
+
+        #--- Pre-flight Validation ---
+        Invoke-Step -Name "Pre-flight validation" -Script {
+            Write-Log "Current User: $env:USERNAME" -Level 'Info'
+            Write-Log "Current Computer: $env:COMPUTERNAME" -Level 'Info'
+
+            # Check SMS_ADMIN_UI_PATH
+            if (-not $env:SMS_ADMIN_UI_PATH) {
+                throw "SMS_ADMIN_UI_PATH environment variable not found. Ensure ConfigMgr console is installed."
+            }
+            Write-Log "SMS_ADMIN_UI_PATH: $env:SMS_ADMIN_UI_PATH" -Level 'Info'
+
+            # Check module path
+            $modulePath = $env:SMS_ADMIN_UI_PATH.Substring(0, $env:SMS_ADMIN_UI_PATH.Length - 5) + '\ConfigurationManager.psd1'
+            if (-not (Test-Path $modulePath)) {
+                throw "ConfigurationManager module not found at: $modulePath"
+            }
+            Write-Log "ConfigMgr module found" -Level 'Info'
+
+            # Check content location
+            Write-Log "Checking content location: $ContentLocation" -Level 'Info'
+            if (-not (Test-Path $ContentLocation -PathType Container)) {
+                throw "Content location not accessible: $ContentLocation"
+            }
+            Write-Log "Content location accessible" -Level 'Info'
+
+            # Check install file (skip if command contains DOS variables like %ProgramFiles%)
+            if ($InstallCommand -match '%.*%') {
+                Write-Log "Install command contains environment variable(s) - skipping file validation" -Level 'Info'
+            } else {
+                $installFile = Join-Path $ContentLocation $InstallCommand
+                if (-not (Test-Path $installFile)) {
+                    throw "Installation command file not found: $installFile"
+                }
+                Write-Log "Install file found" -Level 'Info'
+            }
+
+            # Check uninstall file (optional)
+            if (-not [string]::IsNullOrWhiteSpace($UninstallCommand)) {
+                if ($UninstallCommand -match '%.*%') {
+                    Write-Log "Uninstall command contains environment variable(s) - skipping file validation" -Level 'Info'
+                } else {
+                    $uninstallFile = Join-Path $ContentLocation $UninstallCommand
+                    if (-not (Test-Path $uninstallFile)) {
+                        Write-Log "Uninstall command file not found: $uninstallFile (continuing)" -Level 'Warning'
+                    }
+                }
+            }
+        }
+
+        #--- Import SCCM Module & Connect ---
+        Invoke-Step -Name "Import ConfigurationManager module & connect to site" -Script {
+            Import-Module ($env:SMS_ADMIN_UI_PATH.Substring(0, $env:SMS_ADMIN_UI_PATH.Length - 5) + '\ConfigurationManager.psd1') -ErrorAction Stop
+            Set-Location "${SiteCode}:\" -ErrorAction Stop
+        }
+
+        #--- Deployment Steps ---
+        try {
+            # Remove existing application if present
+            Invoke-Step -Name "Check and remove existing application '$AppName'" -Script {
+                $existingDeployments = Get-CMApplicationDeployment -Name $AppName -ErrorAction SilentlyContinue
+                if ($existingDeployments) {
+                    Write-Log "Found $($existingDeployments.Count) existing deployment(s)" -Level 'Info'
+                    if (-not $WhatIf) {
+                        foreach ($deployment in $existingDeployments) {
+                            Remove-CMApplicationDeployment -InputObject $deployment -Force -ErrorAction Stop
+                            Write-Log "Removed deployment to: $($deployment.CollectionName)" -Level 'Success'
+                        }
+                    } else {
+                        Write-Log "[WHATIF] Would remove $($existingDeployments.Count) existing deployment(s)" -Level 'Info'
+                    }
+                }
+
+                $existing = Get-CMApplication -Name $AppName -Fast -ErrorAction SilentlyContinue
+                if ($existing) {
+                    Write-Log "Found existing application '$AppName'" -Level 'Info'
+                    if (-not $WhatIf) {
+                        Remove-CMApplication -Name $AppName -Force -ErrorAction Stop
+                        Write-Log "Removed existing application" -Level 'Success'
+                    } else {
+                        Write-Log "[WHATIF] Would remove existing application '$AppName'" -Level 'Info'
+                    }
+                }
+            }
+
+            # Create application
+            Invoke-Step -Name "Create application '$AppName'" -Script {
+                if (-not $WhatIf) {
+                    New-CMApplication -Name $AppName -Description $Description -ErrorAction Stop | Out-Null
+                    $createdObjects.Application = $AppName
+                } else {
+                    Write-Log "[WHATIF] Would create application '$AppName'" -Level 'Info'
+                }
+            }
+
+            # Build detection clauses
+            Write-Log "Building detection rules" -Level 'Step'
+
+            $clause1 = New-CMDetectionClauseRegistryKeyValue `
+                -Hive LocalMachine `
+                -KeyName "Software\Microsoft\Office\ClickToRun\Configuration" `
+                -ValueName "VersionToReport" `
+                -PropertyType Version `
+                -ExpressionOperator GreaterEquals `
+                -ExpectedValue "16.0.11929.20562" `
+                -Is64Bit $true
+
+            $clause2 = New-CMDetectionClauseRegistryKeyValue `
+                -Hive LocalMachine `
+                -KeyName "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\ProPlus2024Volume - en-us" `
+                -ValueName "DisplayName" `
+                -PropertyType String `
+                -ExpressionOperator IsEquals `
+                -ExpectedValue "Microsoft Office LTSC Professional Plus 2024 - en-us" `
+                -Is64Bit $true
+
+            Write-Log "Detection clauses created successfully" -Level 'Success'
+
+            # Add deployment type with detection
+            Invoke-Step -Name "Add Script/EXE deployment type" -Script {
+                if (-not $WhatIf) {
+                    $dtParams = @{
+                        ApplicationName           = $AppName
+                        DeploymentTypeName        = $DeploymentTypeName
+                        ContentLocation           = $ContentLocation
+                        InstallCommand            = $InstallCommand
+                        UninstallCommand          = $UninstallCommand
+                        InstallationBehaviorType  = 'InstallForSystem'
+                        LogonRequirementType      = 'WhetherOrNotUserLoggedOn'
+                        UserInteractionMode       = 'Hidden'
+                        MaximumRuntimeMins        = $MaxRuntimeMins
+                        RebootBehavior            = 'BasedOnExitCode'
+                        SlowNetworkDeploymentMode = 'Download'
+                    }
+
+                    Add-CMScriptDeploymentType @dtParams `
+                        -ContentFallback `
+                        -EnableBranchCache `
+                        -AddDetectionClause $clause1, $clause2 `
+                        -ErrorAction Stop | Out-Null
+
+                    Write-Log "Deployment type created with 2 detection rules (AND logic)" -Level 'Success'
+                } else {
+                    Write-Log "[WHATIF] Would add deployment type '$DeploymentTypeName' with detection rules" -Level 'Info'
+                }
+            }
+
+            # Set OS requirements
+            Invoke-Step -Name "Add OS requirement (Windows 11 x64/ARM64)" -Script {
+                if (-not $WhatIf) {
+                    $osGC = Get-CMGlobalCondition -Name "Operating System" |
+                            Where-Object PlatformType -eq 1
+
+                    if (-not $osGC) {
+                        throw "Operating System global condition not found"
+                    }
+
+                    Set-CMDeploymentType -ApplicationName $AppName `
+                        -DeploymentTypeName $DeploymentTypeName `
+                        -ClearRequirements -ErrorAction Stop | Out-Null
+
+                    $osRule = $osGC | New-CMRequirementRuleOperatingSystemValue `
+                        -PlatformString @(
+                            'Windows/All_x64_Windows_11_and_higher_Clients',
+                            'Windows/All_ARM64_Windows_11_and_higher_Clients'
+                        ) `
+                        -RuleOperator OneOf
+
+                    Set-CMScriptDeploymentType -ApplicationName $AppName `
+                        -DeploymentTypeName $DeploymentTypeName `
+                        -AddRequirement $osRule -ErrorAction Stop | Out-Null
+
+                    Write-Log "OS requirements configured: Windows 11 (x64 + ARM64)" -Level 'Success'
+                } else {
+                    Write-Log "[WHATIF] Would set OS requirement to Windows 11 x64/ARM64" -Level 'Info'
+                }
+            }
+
+            # Distribute content to DP group
+            Invoke-Step -Name "Distribute content to DP group '$DPGroupName'" -Script {
+                $dpGroupObj = Get-CMDistributionPointGroup -Name $DPGroupName -ErrorAction SilentlyContinue
+                if (-not $dpGroupObj) {
+                    throw "Distribution Point Group '$DPGroupName' not found."
+                }
+
+                if (-not $WhatIf) {
+                    Start-CMContentDistribution -ApplicationName $AppName `
+                        -DistributionPointGroupName $DPGroupName -ErrorAction Stop | Out-Null
+                    Write-Log "Content distribution initiated to $($dpGroupObj.MemberCount) distribution point(s)" -Level 'Success'
+                } else {
+                    Write-Log "[WHATIF] Would distribute content to '$DPGroupName'" -Level 'Info'
+                }
+            }
+
+            # Create install collection
+            Invoke-Step -Name "Create device collection '$InstallCollectionName'" -Script {
+                $limiter = Get-CMDeviceCollection -Name $LimitingCollectionName -ErrorAction SilentlyContinue
+                if (-not $limiter) {
+                    throw "Limiting collection '$LimitingCollectionName' not found."
+                }
+
+                $existing = Get-CMDeviceCollection -Name $InstallCollectionName -ErrorAction SilentlyContinue
+                if (-not $existing) {
+                    if (-not $WhatIf) {
+                        New-CMDeviceCollection -Name $InstallCollectionName `
+                            -LimitingCollectionId $limiter.CollectionID `
+                            -ErrorAction Stop | Out-Null
+
+                        Write-Log "Collection created, waiting for provider replication..." -Level 'Info'
+                        $timeout = [datetime]::UtcNow.AddMinutes($CollectionCreationTimeoutMinutes)
+                        $retryCount = 0
+                        do {
+                            Start-Sleep -Seconds 3
+                            $retryCount++
+                            $existing = Get-CMDeviceCollection -Name $InstallCollectionName -ErrorAction SilentlyContinue
+                            if ($existing) {
+                                Write-Log "Collection verified after $retryCount attempts" -Level 'Success'
+                                break
+                            }
+                            if ([datetime]::UtcNow -gt $timeout) {
+                                throw "Collection creation timed out after $CollectionCreationTimeoutMinutes minutes."
+                            }
+                        } while (-not $existing)
+
+                        $createdObjects.Collections += $InstallCollectionName
+                    } else {
+                        Write-Log "[WHATIF] Would create device collection '$InstallCollectionName'" -Level 'Info'
+                    }
+                } else {
+                    Write-Log "Collection '$InstallCollectionName' already exists" -Level 'Info'
+                }
+            }
+
+            # Create uninstall collection
+            Invoke-Step -Name "Create device collection '$UninstallCollectionName'" -Script {
+                $limiter = Get-CMDeviceCollection -Name $LimitingCollectionName -ErrorAction SilentlyContinue
+                if (-not $limiter) {
+                    throw "Limiting collection '$LimitingCollectionName' not found."
+                }
+
+                $existing = Get-CMDeviceCollection -Name $UninstallCollectionName -ErrorAction SilentlyContinue
+                if (-not $existing) {
+                    if (-not $WhatIf) {
+                        New-CMDeviceCollection -Name $UninstallCollectionName `
+                            -LimitingCollectionId $limiter.CollectionID `
+                            -ErrorAction Stop | Out-Null
+
+                        Write-Log "Collection created, waiting for provider replication..." -Level 'Info'
+                        $timeout = [datetime]::UtcNow.AddMinutes($CollectionCreationTimeoutMinutes)
+                        $retryCount = 0
+                        do {
+                            Start-Sleep -Seconds 3
+                            $retryCount++
+                            $existing = Get-CMDeviceCollection -Name $UninstallCollectionName -ErrorAction SilentlyContinue
+                            if ($existing) {
+                                Write-Log "Collection verified after $retryCount attempts" -Level 'Success'
+                                break
+                            }
+                            if ([datetime]::UtcNow -gt $timeout) {
+                                throw "Collection creation timed out after $CollectionCreationTimeoutMinutes minutes."
+                            }
+                        } while (-not $existing)
+
+                        $createdObjects.Collections += $UninstallCollectionName
+                    } else {
+                        Write-Log "[WHATIF] Would create device collection '$UninstallCollectionName'" -Level 'Info'
+                    }
+                } else {
+                    Write-Log "Collection '$UninstallCollectionName' already exists" -Level 'Info'
+                }
+            }
+
+            # Create install deployment
+            Invoke-Step -Name "Deploy '$AppName' to '$InstallCollectionName' (Install / Required)" -Script {
+                $retries = 0
+                $maxRetries = 10
+                $collection = $null
+
+                do {
+                    $collection = Get-CMDeviceCollection -Name $InstallCollectionName -ErrorAction SilentlyContinue
+                    if ($collection) { break }
+                    if ($retries -gt 0) {
+                        Write-Log "Waiting for collection replication... (attempt $retries/$maxRetries)" -Level 'Info'
+                        Start-Sleep -Seconds 5
+                    }
+                    $retries++
+                } while ($retries -le $maxRetries)
+
+                if (-not $collection -and -not $WhatIf) {
+                    throw "Collection '$InstallCollectionName' not found after $maxRetries retries."
+                }
+
+                if (-not $WhatIf) {
+                    $deployment = New-CMApplicationDeployment `
+                        -ApplicationName $AppName `
+                        -CollectionId $collection.CollectionID `
+                        -DeployAction Install `
+                        -DeployPurpose Required `
+                        -UserNotification DisplaySoftwareCenterOnly `
+                        -ErrorAction Stop
+
+                    $createdObjects.Deployments += $deployment.DeploymentID
+                    Write-Log "Deployment created (ID: $($deployment.DeploymentID))" -Level 'Success'
+                } else {
+                    Write-Log "[WHATIF] Would create Install/Required deployment to '$InstallCollectionName'" -Level 'Info'
+                }
+            }
+
+            # Move application to folder (if specified)
+            if (-not [string]::IsNullOrWhiteSpace($ApplicationFolder)) {
+                Invoke-Step -Name "Move application to folder '$ApplicationFolder'" -Script {
+                    $fullPath = "${SiteCode}:\Application\${ApplicationFolder}"
+                    if (-not $WhatIf) {
+                        $app = Get-CMApplication -Name $AppName -ErrorAction Stop
+                        Move-CMObject -FolderPath $fullPath -InputObject $app -ErrorAction Stop
+                    } else {
+                        Write-Log "[WHATIF] Would move application to '$fullPath'" -Level 'Info'
+                    }
+                }
+            }
+
+            # Move collections to folder (if specified)
+            if (-not [string]::IsNullOrWhiteSpace($CollectionFolder)) {
+                Invoke-Step -Name "Move collections to folder '$CollectionFolder'" -Script {
+                    $fullPath = "${SiteCode}:\DeviceCollection\${CollectionFolder}"
+                    foreach ($collName in @($InstallCollectionName, $UninstallCollectionName)) {
+                        if (-not $WhatIf) {
+                            $coll = Get-CMDeviceCollection -Name $collName -ErrorAction Stop
+                            Move-CMObject -FolderPath $fullPath -InputObject $coll -ErrorAction Stop
+                            Write-Log "Moved collection: $collName" -Level 'Info'
+                        } else {
+                            Write-Log "[WHATIF] Would move collection '$collName' to '$fullPath'" -Level 'Info'
+                        }
+                    }
+                }
+            }
+
+            Write-Log "" -Level 'Info'
+            Write-Log "========================================" -Level 'Success'
+            Write-Log "ALL STEPS COMPLETED SUCCESSFULLY" -Level 'Success'
+            Write-Log "Application: $AppName" -Level 'Success'
+            Write-Log "========================================" -Level 'Success'
+        }
+        catch {
+            Write-Log "Deployment failed: $_" -Level 'Error'
+
+            if (-not $NoRollback -and $createdObjects.Application) {
+                Invoke-Rollback
+            }
+
+            throw
+        }
+    }
+    catch {
+        Write-Log "Script execution failed: $_" -Level 'Error'
+    }
+    finally {
+        # Return to original location
+        try {
+            if ((Get-Location).Provider.Name -eq 'CMSite' -and $originalLocation) {
+                Set-Location $originalLocation.Path -ErrorAction SilentlyContinue
+            }
+        } catch {}
+
+        if ($LogFilePath) {
+            Write-Log "Log file saved to: $LogFilePath" -Level 'Info'
+        }
+    }
+}
+
+#endregion
 
 #region HTTP Server Functions
 
@@ -51,9 +607,7 @@ function Get-ContentType {
     }
 
     $type = $contentTypes[$Extension]
-    if ($type) {
-        return $type
-    }
+    if ($type) { return $type }
     return 'text/plain'
 }
 
@@ -425,16 +979,16 @@ function Get-HTMLPage {
         </div>
 
         <div class="tabs">
-            <button class="tab active" onclick="switchTab('config')">⚙️ Configuration</button>
-            <button class="tab" onclick="switchTab('options')">🔧 Options</button>
-            <button class="tab" onclick="switchTab('log')">📋 Execution Log</button>
+            <button class="tab active" onclick="switchTab('config')">Configuration</button>
+            <button class="tab" onclick="switchTab('options')">Options</button>
+            <button class="tab" onclick="switchTab('log')">Execution Log</button>
         </div>
 
         <div id="config" class="tab-content active">
             <h2>Application Configuration</h2>
 
             <div id="validationSummary" class="validation-summary">
-                <h3>⚠️ Please fix the following errors:</h3>
+                <h3>Please fix the following errors:</h3>
                 <ul id="validationErrors"></ul>
             </div>
 
@@ -458,7 +1012,7 @@ function Get-HTMLPage {
             </div>
 
             <fieldset class="fieldset">
-                <legend>📁 Content Settings</legend>
+                <legend>Content Settings</legend>
 
                 <div class="form-group">
                     <label class="required">Content Location (UNC Path)</label>
@@ -487,7 +1041,7 @@ function Get-HTMLPage {
             </fieldset>
 
             <fieldset class="fieldset">
-                <legend>📦 Collections & Distribution</legend>
+                <legend>Collections & Distribution</legend>
 
                 <div class="form-group">
                     <label class="required">Limiting Collection</label>
@@ -515,7 +1069,7 @@ function Get-HTMLPage {
             </fieldset>
 
             <fieldset class="fieldset">
-                <legend>📂 Console Organization</legend>
+                <legend>Console Organization</legend>
 
                 <div class="form-row">
                     <div class="form-group">
@@ -580,10 +1134,10 @@ function Get-HTMLPage {
 
         <div class="actions">
             <button class="btn btn-whatif" id="btnWhatIf" onclick="startDeployment(true)">
-                🧪 WhatIf (Test Run)
+                WhatIf (Test Run)
             </button>
             <button class="btn btn-deploy" id="btnDeploy" onclick="startDeployment(false)">
-                🚀 Deploy
+                Deploy
             </button>
         </div>
     </div>
@@ -763,10 +1317,8 @@ function Get-HTMLPage {
         }
 
         function validateInputs() {
-            // Validate all required fields
             const allValid = validateAllFields();
 
-            // Additional validation for optional fields
             const appFolder = document.getElementById('appFolder').value.trim();
             const collFolder = document.getElementById('collectionFolder').value.trim();
 
@@ -781,7 +1333,6 @@ function Get-HTMLPage {
             }
 
             if (!allValid) {
-                // Switch to config tab to show errors
                 switchTab('config');
                 return false;
             }
@@ -793,8 +1344,8 @@ function Get-HTMLPage {
             return {
                 AppName: document.getElementById('appName').value,
                 Description: document.getElementById('description').value,
-                SiteCode: 'CM0',  // Hardcoded
-                SiteServerFqdn: 'WAZEU2PRDDE051.corp.internal.citizensbank.com',  // Hardcoded
+                SiteCode: 'CM0',
+                SiteServerFqdn: 'WAZEU2PRDDE051.corp.internal.citizensbank.com',
                 ContentLocation: document.getElementById('contentLocation').value,
                 InstallCommand: document.getElementById('installCmd').value,
                 UninstallCommand: document.getElementById('uninstallCmd').value,
@@ -851,16 +1402,11 @@ function Get-HTMLPage {
 
         // Initialize real-time validation and auto-refresh
         document.addEventListener('DOMContentLoaded', () => {
-            // Add real-time validation listeners to required fields
             for (const fieldId in requiredFields) {
                 const field = document.getElementById(fieldId);
                 if (field) {
-                    // Validate on blur (when user leaves the field)
                     field.addEventListener('blur', () => validateField(fieldId));
-
-                    // Also validate on input for immediate feedback
                     field.addEventListener('input', () => {
-                        // Only clear error on input, don't show new errors yet
                         if (field.value.trim()) {
                             validateField(fieldId);
                         }
@@ -868,10 +1414,8 @@ function Get-HTMLPage {
                 }
             }
 
-            // Initial validation to set button states
             validateAllFields();
 
-            // Auto-refresh log when on log tab
             const activeTab = document.querySelector('.tab-content.active');
             if (activeTab && activeTab.id === 'log') {
                 startLogRefresh();
@@ -893,19 +1437,40 @@ function Handle-GetLogs {
     # Collect output from runspace if deployment is running
     if ($script:CurrentRunspace -and $script:CurrentAsyncResult) {
         try {
-            if ($script:CurrentAsyncResult.IsCompleted) {
-                # Get final output
-                $output = $script:CurrentRunspace.EndInvoke($script:CurrentAsyncResult)
-                if ($output) {
-                    $script:LogMessages = @()
-                    foreach ($line in $output) {
-                        if ($line) { $script:LogMessages += "$line" }
-                    }
+            # Read any available output from the PSDataCollection (real-time)
+            if ($script:OutputCollection) {
+                $newMessages = @()
+                $count = $script:OutputCollection.Count
+                for ($i = 0; $i -lt $count; $i++) {
+                    $line = "$($script:OutputCollection[$i])"
+                    if ($line) { $newMessages += $line }
                 }
+                if ($newMessages.Count -gt 0) {
+                    # Keep the initial header messages and append live output
+                    $headerCount = 0
+                    foreach ($msg in $script:LogMessages) {
+                        if ($msg -match '^===|^Timestamp:|^Mode:|^Application:|^Site:|^Content:|^Install Cmd:|^Uninstall Cmd:|^={3,}$|^$|^Starting deployment') {
+                            $headerCount++
+                        } else {
+                            break
+                        }
+                    }
+                    $header = @()
+                    if ($headerCount -gt 0 -and $headerCount -le $script:LogMessages.Count) {
+                        $header = $script:LogMessages[0..($headerCount - 1)]
+                    }
+                    $script:LogMessages = $header + $newMessages
+                }
+            }
 
-                # Check for errors
+            if ($script:CurrentAsyncResult.IsCompleted) {
+                # Get any final output
+                try {
+                    $finalOutput = $script:CurrentRunspace.EndInvoke($script:CurrentAsyncResult)
+                } catch {}
+
+                # Check for errors in streams
                 if ($script:CurrentRunspace.Streams.Error.Count -gt 0) {
-                    $script:LogMessages += ""
                     foreach ($err in $script:CurrentRunspace.Streams.Error) {
                         $script:LogMessages += "[ERROR] $err"
                     }
@@ -913,33 +1478,18 @@ function Handle-GetLogs {
 
                 $script:LogMessages += ""
                 $script:LogMessages += "========================================="
-                $script:LogMessages += "DEPLOYMENT COMPLETED"
+                $script:LogMessages += "DEPLOYMENT PROCESS FINISHED"
                 $script:LogMessages += "========================================="
 
                 $script:CurrentRunspace.Dispose()
                 $script:CurrentRunspace = $null
                 $script:CurrentAsyncResult = $null
+                $script:OutputCollection = $null
                 $script:IsDeploying = $false
-                $script:CurrentJobId = $null
-            } else {
-                # Still running - collect any output from streams
-                $newOutput = @()
-                foreach ($info in $script:CurrentRunspace.Streams.Information) {
-                    $newOutput += "$info"
-                }
-                foreach ($warn in $script:CurrentRunspace.Streams.Warning) {
-                    $newOutput += "[WARNING] $warn"
-                }
-                foreach ($err in $script:CurrentRunspace.Streams.Error) {
-                    $newOutput += "[ERROR] $err"
-                }
-                if ($newOutput.Count -gt 0) {
-                    $script:LogMessages = $newOutput
-                }
             }
         }
         catch {
-            $script:LogMessages += "Error reading runspace: $_"
+            $script:LogMessages += "Error reading deployment output: $_"
         }
     }
 
@@ -989,47 +1539,44 @@ function Handle-Deploy {
     $script:LogMessages += "========================"
     $script:LogMessages += ""
 
-    # Build parameters
+    # Build config hashtable for the deployment scriptblock
     $params = @{
-        AppName = $config.AppName
-        Description = $config.Description
-        SiteCode = $config.SiteCode
-        SiteServerFqdn = $config.SiteServerFqdn
-        ContentLocation = $config.ContentLocation
-        InstallCommand = $config.InstallCommand
-        UninstallCommand = $config.UninstallCommand
-        DeploymentTypeName = $config.DeploymentTypeName
-        DPGroupName = $config.DPGroupName
-        LimitingCollectionName = $config.LimitingCollectionName
-        ApplicationFolder = $config.ApplicationFolder
-        CollectionFolder = $config.CollectionFolder
-        MaxRuntimeMins = $config.MaxRuntimeMins
+        AppName                          = $config.AppName
+        Description                      = $config.Description
+        SiteCode                         = $config.SiteCode
+        SiteServerFqdn                   = $config.SiteServerFqdn
+        ContentLocation                  = $config.ContentLocation
+        InstallCommand                   = $config.InstallCommand
+        UninstallCommand                 = $config.UninstallCommand
+        DeploymentTypeName               = $config.DeploymentTypeName
+        DPGroupName                      = $config.DPGroupName
+        LimitingCollectionName           = $config.LimitingCollectionName
+        InstallCollectionName            = $config.InstallCollectionName
+        UninstallCollectionName          = $config.UninstallCollectionName
+        ApplicationFolder                = $config.ApplicationFolder
+        CollectionFolder                 = $config.CollectionFolder
+        MaxRuntimeMins                   = $config.MaxRuntimeMins
         CollectionCreationTimeoutMinutes = $config.CollectionCreationTimeoutMinutes
-        Confirm = $false
+        LogFilePath                      = $config.LogFilePath
+        Force                            = [bool]$config.Force
+        NoRollback                       = [bool]$config.NoRollback
+        VerboseLogging                   = [bool]$config.VerboseLogging
+        WhatIf                           = [bool]$config.WhatIf
     }
 
-    if ($config.InstallCollectionName) { $params.InstallCollectionName = $config.InstallCollectionName }
-    if ($config.UninstallCollectionName) { $params.UninstallCollectionName = $config.UninstallCollectionName }
-    if ($config.LogFilePath -and $config.LogFilePath.Trim()) { $params.LogFilePath = $config.LogFilePath.Trim() }
-    if ($config.Force) { $params.Force = $true }
-    if ($config.NoRollback) { $params.NoRollback = $true }
-    if ($config.VerboseLogging) { $params.VerboseLogging = $true }
-    if ($config.WhatIf) { $params.WhatIf = $true }
-
-    # Run deployment in a PowerShell runspace (same process, same context)
+    # Run deployment in a PowerShell runspace (same process = same WMI/SCCM context)
     $ps = [PowerShell]::Create()
-    $ps.AddScript({
-        param($ScriptPath, $Params)
-        & $ScriptPath @Params 2>&1
-    }).AddArgument($DeploymentScript).AddArgument($params) | Out-Null
+    $ps.AddScript($script:DeploymentScriptBlock).AddArgument($params) | Out-Null
+
+    # Use PSDataCollection for real-time output streaming
+    $script:OutputCollection = New-Object 'System.Management.Automation.PSDataCollection[PSObject]'
+    $inputCollection = New-Object 'System.Management.Automation.PSDataCollection[PSObject]'
+    $inputCollection.Complete()
 
     $script:CurrentRunspace = $ps
-    $script:CurrentAsyncResult = $ps.BeginInvoke()
-    $script:CurrentJobId = 1  # Flag that deployment is running
+    $script:CurrentAsyncResult = $ps.BeginInvoke($inputCollection, $script:OutputCollection)
 
-    # Add initial log message
-    $script:LogMessages += "Starting deployment process (ID: $($process.Id))..."
-    $script:LogMessages += "Log file: $script:CurrentLogFile"
+    $script:LogMessages += "Starting deployment in runspace (same process context)..."
     $script:LogMessages += "Waiting for output..."
 
     Send-HttpResponse -Context $Context -Content '{"success":true}' -ContentType 'application/json'
@@ -1072,6 +1619,7 @@ try {
     Write-Host "Run this command as Administrator to open the port:" -ForegroundColor Gray
     Write-Host "  New-NetFirewallRule -DisplayName 'SCCM Web GUI' -Direction Inbound -LocalPort $Port -Protocol TCP -Action Allow" -ForegroundColor Cyan
     Write-Host ""
+    Write-Host "NOTE: This is a consolidated script - no external dependency required." -ForegroundColor Green
     Write-Host "Press Ctrl+C to stop the server" -ForegroundColor Gray
     Write-Host "========================================" -ForegroundColor Cyan
     Write-Host ""
