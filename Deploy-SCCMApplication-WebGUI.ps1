@@ -271,8 +271,17 @@ $script:DeploymentScriptBlock = {
         }
 
         #--- Import SCCM Module & Connect ---
-        Invoke-Step -Name "Import ConfigurationManager module & connect to site" -Script {
+        Invoke-Step -Name "Import ConfigurationManager module" -Script {
             Import-Module ($env:SMS_ADMIN_UI_PATH.Substring(0, $env:SMS_ADMIN_UI_PATH.Length - 5) + '\ConfigurationManager.psd1') -ErrorAction Stop
+        }
+
+        Invoke-Step -Name "Connect to SCCM site $SiteCode on $SiteServerFqdn" -Script {
+            # In a fresh runspace, the CMSite PSDrive doesn't exist yet.
+            # Explicitly create it pointing to the site server.
+            if (-not (Get-PSDrive -Name $SiteCode -PSProvider CMSite -ErrorAction SilentlyContinue)) {
+                Write-Log "Creating CMSite PSDrive for ${SiteCode}: -> $SiteServerFqdn" -Level 'Info'
+                New-PSDrive -Name $SiteCode -PSProvider CMSite -Root $SiteServerFqdn -ErrorAction Stop | Out-Null
+            }
             Set-Location "${SiteCode}:\" -ErrorAction Stop
         }
 
