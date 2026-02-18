@@ -27,6 +27,7 @@ $script:SiteServer = 'WAZEU2PRDDE051.corp.internal.citizensbank.com'
 $script:LogMessages = @()
 $script:IsDeploying = $false
 $script:CurrentRunspace = $null
+$script:CurrentRunspaceHandle = $null   # The underlying Runspace object (for STA/cleanup)
 $script:CurrentAsyncResult = $null
 $script:OutputCollection = $null
 
@@ -1483,6 +1484,11 @@ function Handle-GetLogs {
 
                 $script:CurrentRunspace.Dispose()
                 $script:CurrentRunspace = $null
+                if ($script:CurrentRunspaceHandle) {
+                    $script:CurrentRunspaceHandle.Close()
+                    $script:CurrentRunspaceHandle.Dispose()
+                    $script:CurrentRunspaceHandle = $null
+                }
                 $script:CurrentAsyncResult = $null
                 $script:OutputCollection = $null
                 $script:IsDeploying = $false
@@ -1564,8 +1570,17 @@ function Handle-Deploy {
         WhatIf                           = [bool]$config.WhatIf
     }
 
-    # Run deployment in a PowerShell runspace (same process = same WMI/SCCM context)
+    # Run deployment in a PowerShell runspace with STA threading.
+    # SCCM's ConfigurationManager module uses COM/DCOM components that require
+    # Single-Threaded Apartment (STA) model — the same model used by interactive
+    # PowerShell sessions. Default runspaces use MTA which breaks WMI calls.
+    $runspace = [System.Management.Automation.Runspaces.RunspaceFactory]::CreateRunspace()
+    $runspace.ApartmentState = [System.Threading.ApartmentState]::STA
+    $runspace.ThreadOptions = [System.Management.Automation.Runspaces.PSThreadOptions]::UseNewThread
+    $runspace.Open()
+
     $ps = [PowerShell]::Create()
+    $ps.Runspace = $runspace
     $ps.AddScript($script:DeploymentScriptBlock).AddArgument($params) | Out-Null
 
     # Use PSDataCollection for real-time output streaming
@@ -1573,10 +1588,11 @@ function Handle-Deploy {
     $inputCollection = New-Object 'System.Management.Automation.PSDataCollection[PSObject]'
     $inputCollection.Complete()
 
+    $script:CurrentRunspaceHandle = $runspace
     $script:CurrentRunspace = $ps
     $script:CurrentAsyncResult = $ps.BeginInvoke($inputCollection, $script:OutputCollection)
 
-    $script:LogMessages += "Starting deployment in runspace (same process context)..."
+    $script:LogMessages += "Starting deployment (STA runspace, same process context)..."
     $script:LogMessages += "Waiting for output..."
 
     Send-HttpResponse -Context $Context -Content '{"success":true}' -ContentType 'application/json'
@@ -1676,9 +1692,14 @@ finally {
             $script:CurrentRunspace.Stop()
             $script:CurrentRunspace.Dispose()
         }
-        catch {
-            # Runspace may have already completed
+        catch {}
+    }
+    if ($script:CurrentRunspaceHandle) {
+        try {
+            $script:CurrentRunspaceHandle.Close()
+            $script:CurrentRunspaceHandle.Dispose()
         }
+        catch {}
     }
 
     Write-Host "`nServer stopped." -ForegroundColor Yellow
