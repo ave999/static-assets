@@ -886,7 +886,16 @@ function Invoke-SCCMDeployment {
         try {
             #--- Remove existing application ---
             Invoke-Step -Name "Check and remove existing application '$AppName'" -Script {
-                $existingDeployments = Get-CMApplicationDeployment -Name $AppName -ErrorAction SilentlyContinue
+                # Get-CMApplicationDeployment can throw a terminating ArgumentNullException
+                # internally (null WMI property used as a dictionary key). -ErrorAction
+                # SilentlyContinue only suppresses non-terminating errors, so we must
+                # use try/catch here. Treat any such failure as "no deployments found".
+                $existingDeployments = $null
+                try {
+                    $existingDeployments = Get-CMApplicationDeployment -Name $AppName -ErrorAction SilentlyContinue
+                } catch {
+                    Write-Log "Could not query existing deployments (non-fatal, assuming none): $_" -Level 'Warning'
+                }
                 if ($existingDeployments) {
                     Write-Log "Found $($existingDeployments.Count) existing deployment(s)"
                     if (-not $WhatIf) {
