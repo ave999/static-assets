@@ -483,7 +483,8 @@ $HttpServerBlock = {
                 logContainer.textContent = data.logs.join('\n');
                 if (wasAtBottom) logContainer.scrollTop = logContainer.scrollHeight;
                 updateStatus(data.isDeploying);
-            });
+            })
+            .catch(() => { /* transient poll failure — ignore, next tick will retry */ });
     }
 
     function updateStatus(isDeploying) {
@@ -668,7 +669,11 @@ $HttpServerBlock = {
                     }
                 }
             } catch {
-                try { Send-HttpResponse -Context $context -Content "Error: $_" -StatusCode 500 } catch {}
+                # Always respond with JSON so the browser's r.json() call doesn't blow up.
+                # Sending text/html (the Send-HttpResponse default) caused the frontend to
+                # receive <!DOCTYPE … or plain text and throw "not valid JSON".
+                $errJson = "{{""success"":false,""error"":""{0}""}}" -f ("$_" -replace '"','\"')
+                try { Send-HttpResponse -Context $context -Content $errJson -ContentType 'application/json' -StatusCode 500 } catch {}
             }
         } catch [System.Net.HttpListenerException] {
             break
