@@ -1192,7 +1192,16 @@ if (-not (Test-Path $cmModulePath)) {
     exit 1
 }
 
-Import-Module $cmModulePath -ErrorAction Stop
+Import-Module $cmModulePath -ErrorAction SilentlyContinue
+
+# The module may emit a WqlQueryException when it tries to auto-create CMSite PSDrives
+# during import (WMI site discovery). That failure is non-fatal — we create the drive
+# manually in the Connect step. Verify the CMSite PSProvider registered instead.
+if (-not (Get-PSProvider -PSProvider 'CMSite' -ErrorAction SilentlyContinue)) {
+    Write-Host "ERROR: ConfigurationManager module failed to load (CMSite provider not registered)." -ForegroundColor Red
+    Write-Host "       Module path: $cmModulePath" -ForegroundColor Red
+    exit 1
+}
 Write-Host "ConfigurationManager module imported." -ForegroundColor Green
 Write-Host ""
 
