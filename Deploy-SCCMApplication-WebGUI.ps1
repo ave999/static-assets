@@ -935,21 +935,20 @@ function Invoke-SCCMDeployment {
             $detectionClauses = @()
 
             # Registry: 64-bit uninstall key (existence)
-            $detectionClauses += New-CMDetectionClauseRegistryKeyValue `
+            # New-CMDetectionClauseRegistryKey checks that the key itself exists.
+            # New-CMDetectionClauseRegistryKeyValue is for named values within a key
+            # and prompts interactively for ValueName/PropertyType when those params
+            # are missing — so use the correct Key-only cmdlet here.
+            $detectionClauses += New-CMDetectionClauseRegistryKey `
                 -Hive LocalMachine `
                 -Is64Bit `
-                -KeyName "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$DetectionRegKeyName" `
-                -Existence
+                -KeyName "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$DetectionRegKeyName"
 
             # Registry: 32-bit uninstall key (existence)
             # No -Is64Bit so SCCM uses the 32-bit (WOW64) registry view automatically.
-            # Using the standard Uninstall path (not the explicit WOW6432Node path) is
-            # correct here — combining -Is64Bit with an explicit WOW6432Node path is
-            # contradictory and causes a parameter binding error on some module versions.
-            $detectionClauses += New-CMDetectionClauseRegistryKeyValue `
+            $detectionClauses += New-CMDetectionClauseRegistryKey `
                 -Hive LocalMachine `
-                -KeyName "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$DetectionRegKeyName" `
-                -Existence
+                -KeyName "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$DetectionRegKeyName"
 
             # File detection (optional — only added when both path and filename are provided)
             if (-not [string]::IsNullOrWhiteSpace($DetectionFilePath) -and -not [string]::IsNullOrWhiteSpace($DetectionFileName)) {
