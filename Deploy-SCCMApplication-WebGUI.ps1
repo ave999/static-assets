@@ -1014,8 +1014,6 @@ function Invoke-SCCMDeployment {
             #--- Build detection clauses ---
             Write-Log "Building detection rules" -Level 'Step'
 
-            $detectionClauses = @()
-
             # Registry detection — value comparison when all four fields are supplied,
             # key-existence only otherwise.
             $regHasValueDetection = (
@@ -1027,81 +1025,70 @@ function Invoke-SCCMDeployment {
 
             if ($regHasValueDetection) {
                 Write-Log "Registry value detection: $DetectionRegKeyName\$DetectionRegValueName $DetectionRegOperator '$DetectionRegExpectedValue' ($DetectionRegDataType)"
-                # 64-bit registry value
-                $detectionClauses += New-CMDetectionClauseRegistryKeyValue `
-                    -Hive LocalMachine `
-                    -Is64Bit `
-                    -KeyName "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$DetectionRegKeyName" `
-                    -ValueName $DetectionRegValueName `
-                    -PropertyType $DetectionRegDataType `
-                    -ExpressionOperator $DetectionRegOperator `
-                    -Value `
-                    -ExpectedValue $DetectionRegExpectedValue
-                # 32-bit (WOW64) registry value
-                $detectionClauses += New-CMDetectionClauseRegistryKeyValue `
-                    -Hive LocalMachine `
-                    -KeyName "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$DetectionRegKeyName" `
-                    -ValueName $DetectionRegValueName `
-                    -PropertyType $DetectionRegDataType `
-                    -ExpressionOperator $DetectionRegOperator `
-                    -Value `
-                    -ExpectedValue $DetectionRegExpectedValue
             } else {
                 Write-Log "Registry key existence detection: HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$DetectionRegKeyName"
-                # 64-bit key existence
-                $detectionClauses += New-CMDetectionClauseRegistryKey `
-                    -Hive LocalMachine `
-                    -Is64Bit `
-                    -KeyName "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$DetectionRegKeyName"
-                # 32-bit (WOW64) key existence
-                $detectionClauses += New-CMDetectionClauseRegistryKey `
-                    -Hive LocalMachine `
-                    -KeyName "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$DetectionRegKeyName"
             }
-
-            # File detection (optional — only added when both path and filename are provided)
             if (-not [string]::IsNullOrWhiteSpace($DetectionFilePath) -and -not [string]::IsNullOrWhiteSpace($DetectionFileName)) {
-                if (-not [string]::IsNullOrWhiteSpace($DetectionFileVersion)) {
-                    $detectionClauses += New-CMDetectionClauseFile `
-                        -Path $DetectionFilePath `
-                        -FileName $DetectionFileName `
-                        -Value `
-                        -PropertyType Version `
-                        -ExpressionOperator GreaterEquals `
-                        -ExpectedValue $DetectionFileVersion
-                } else {
-                    $detectionClauses += New-CMDetectionClauseFile `
-                        -Path $DetectionFilePath `
-                        -FileName $DetectionFileName `
-                        -Existence
-                }
                 Write-Log "File detection clause added: $DetectionFilePath\$DetectionFileName"
             }
-
-            # Directory detection (optional — only added when both path and name are provided)
             if (-not [string]::IsNullOrWhiteSpace($DetectionDirPath) -and -not [string]::IsNullOrWhiteSpace($DetectionDirName)) {
-                $detectionClauses += New-CMDetectionClauseDirectory `
-                    -Path $DetectionDirPath `
-                    -DirectoryName $DetectionDirName `
-                    -Existence
                 Write-Log "Directory detection clause added: $DetectionDirPath\$DetectionDirName"
             }
-
-            # Windows Installer (MSI ProductCode) detection — most reliable for MSI-based apps.
-            # New-CMDetectionClauseWindowsInstaller queries the Windows Installer product
-            # registration database rather than the registry, so it survives repairs/patches.
             if (-not [string]::IsNullOrWhiteSpace($DetectionMsiProductCode)) {
-                $msiDetectParams = @{ ProductCode = $DetectionMsiProductCode }
-                if ($DetectionMsiVersionOp -and $DetectionMsiVersionOp -ne 'Exists') {
-                    $msiDetectParams['ProductVersion']         = $DetectionMsiVersion
-                    $msiDetectParams['ProductVersionOperator'] = $DetectionMsiVersionOp
-                } else {
-                    $msiDetectParams['ProductVersionOperator'] = 'Exists'
-                }
-                $detectionClauses += New-CMDetectionClauseWindowsInstaller @msiDetectParams
                 Write-Log "Windows Installer detection clause added: ProductCode=$DetectionMsiProductCode (operator=$DetectionMsiVersionOp)"
             }
 
+            # Clause objects in the ConfigMgr SDK carry a CMPSNoMask flag that is set
+            # to True the moment they are consumed by any CM cmdlet. Passing the same
+            # objects to a second cmdlet then throws "Invalid operation CMPSNoMask = True".
+            # This scriptblock is invoked once per cmdlet call so each call receives its
+            # own fresh set of objects.
+            $BuildDetectionClauses = {
+                $c = @()
+                if ($regHasValueDetection) {
+                    $c += New-CMDetectionClauseRegistryKeyValue `
+                        -Hive LocalMachine -Is64Bit `
+                        -KeyName  "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$DetectionRegKeyName" `
+                        -ValueName $DetectionRegValueName -PropertyType $DetectionRegDataType `
+                        -ExpressionOperator $DetectionRegOperator -Value -ExpectedValue $DetectionRegExpectedValue
+                    $c += New-CMDetectionClauseRegistryKeyValue `
+                        -Hive LocalMachine `
+                        -KeyName  "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$DetectionRegKeyName" `
+                        -ValueName $DetectionRegValueName -PropertyType $DetectionRegDataType `
+                        -ExpressionOperator $DetectionRegOperator -Value -ExpectedValue $DetectionRegExpectedValue
+                } else {
+                    $c += New-CMDetectionClauseRegistryKey `
+                        -Hive LocalMachine -Is64Bit `
+                        -KeyName "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$DetectionRegKeyName"
+                    $c += New-CMDetectionClauseRegistryKey `
+                        -Hive LocalMachine `
+                        -KeyName "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$DetectionRegKeyName"
+                }
+                if (-not [string]::IsNullOrWhiteSpace($DetectionFilePath) -and -not [string]::IsNullOrWhiteSpace($DetectionFileName)) {
+                    if (-not [string]::IsNullOrWhiteSpace($DetectionFileVersion)) {
+                        $c += New-CMDetectionClauseFile -Path $DetectionFilePath -FileName $DetectionFileName `
+                            -Value -PropertyType Version -ExpressionOperator GreaterEquals -ExpectedValue $DetectionFileVersion
+                    } else {
+                        $c += New-CMDetectionClauseFile -Path $DetectionFilePath -FileName $DetectionFileName -Existence
+                    }
+                }
+                if (-not [string]::IsNullOrWhiteSpace($DetectionDirPath) -and -not [string]::IsNullOrWhiteSpace($DetectionDirName)) {
+                    $c += New-CMDetectionClauseDirectory -Path $DetectionDirPath -DirectoryName $DetectionDirName -Existence
+                }
+                if (-not [string]::IsNullOrWhiteSpace($DetectionMsiProductCode)) {
+                    $msiP = @{ ProductCode = $DetectionMsiProductCode }
+                    if ($DetectionMsiVersionOp -and $DetectionMsiVersionOp -ne 'Exists') {
+                        $msiP['ProductVersion']         = $DetectionMsiVersion
+                        $msiP['ProductVersionOperator'] = $DetectionMsiVersionOp
+                    } else {
+                        $msiP['ProductVersionOperator'] = 'Exists'
+                    }
+                    $c += New-CMDetectionClauseWindowsInstaller @msiP
+                }
+                $c
+            }
+
+            $detectionClauses = & $BuildDetectionClauses
             Write-Log "Detection clauses built: $($detectionClauses.Count) clause(s)" -Level 'Success'
 
             #--- Add deployment type ---
@@ -1141,20 +1128,19 @@ function Invoke-SCCMDeployment {
                             -ErrorAction Stop | Out-Null
                         Write-Log "MSI deployment type created (detection via ProductCode)" -Level 'Success'
                     } else {
-                        # Create the DT with a placeholder script detection so that
-                        # Add-CMScriptDeploymentType does not prompt for -ScriptLanguage.
-                        # The real clause-based detection is applied immediately after via
-                        # Set-CMScriptDeploymentType. Passing the clause objects to BOTH
-                        # cmdlets causes "CMPSNoMask = True" because the SDK marks each
-                        # clause object as consumed after the first call; using a
-                        # placeholder here keeps the clause objects fresh for the Set call.
+                        # Two-step detection setup to work around CMPSNoMask = True:
+                        #   1. Add-CMScriptDeploymentType with the first clause set — this
+                        #      establishes the "enhanced/clause-based" detection type on the
+                        #      DT (even though the clauses are not persisted by this cmdlet).
+                        #   2. Set-CMScriptDeploymentType with a freshly-built clause set —
+                        #      this actually persists them. Fresh objects are required because
+                        #      the SDK marks clause objects consumed after step 1.
                         $scriptDtParams = @{
-                            ContentLocation = $ContentLocation
-                            InstallCommand  = $InstallCommand
-                            ContentFallback = $true
-                            EnableBranchCache = $true
-                            ScriptLanguage  = 'PowerShell'
-                            ScriptText      = 'return $false'
+                            ContentLocation    = $ContentLocation
+                            InstallCommand     = $InstallCommand
+                            ContentFallback    = $true
+                            EnableBranchCache  = $true
+                            AddDetectionClause = $detectionClauses
                         }
                         if (-not [string]::IsNullOrWhiteSpace($UninstallCommand)) {
                             $scriptDtParams['UninstallCommand'] = $UninstallCommand
@@ -1164,7 +1150,7 @@ function Invoke-SCCMDeployment {
                         Set-CMScriptDeploymentType `
                             -ApplicationName    $AppName `
                             -DeploymentTypeName $DeploymentTypeName `
-                            -AddDetectionClause $detectionClauses `
+                            -AddDetectionClause (& $BuildDetectionClauses) `
                             -ErrorAction Stop | Out-Null
                         Write-Log "Detection clauses applied: $($detectionClauses.Count) clause(s)" -Level 'Success'
                     }
