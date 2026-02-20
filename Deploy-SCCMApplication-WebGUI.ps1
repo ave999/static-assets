@@ -1141,14 +1141,17 @@ function Invoke-SCCMDeployment {
                             -ErrorAction Stop | Out-Null
                         Write-Log "MSI deployment type created (detection via ProductCode)" -Level 'Success'
                     } else {
-                        Add-CMScriptDeploymentType @commonParams `
-                            -ContentLocation $ContentLocation `
-                            -InstallCommand $InstallCommand `
-                            -UninstallCommand $UninstallCommand `
-                            -ContentFallback `
-                            -EnableBranchCache `
-                            -AddDetectionClause $detectionClauses `
-                            -ErrorAction Stop | Out-Null
+                        $scriptDtParams = @{
+                            ContentLocation    = $ContentLocation
+                            InstallCommand     = $InstallCommand
+                            ContentFallback    = $true
+                            EnableBranchCache  = $true
+                            AddDetectionClause = $detectionClauses
+                        }
+                        if (-not [string]::IsNullOrWhiteSpace($UninstallCommand)) {
+                            $scriptDtParams['UninstallCommand'] = $UninstallCommand
+                        }
+                        Add-CMScriptDeploymentType @commonParams @scriptDtParams -ErrorAction Stop | Out-Null
                         Write-Log "Deployment type created with $($detectionClauses.Count) detection clause(s)" -Level 'Success'
                     }
                 } else {
