@@ -263,9 +263,9 @@ $HttpServerBlock = {
                 </div>
             </div>
             <div class="form-group">
-                <label class="required">Distribution Point Group</label>
-                <input type="text" id="dpGroup" placeholder="All Distribution Points">
-                <div class="error-message" id="dpGroup-error">Distribution Point Group is required</div>
+                <label>Distribution Point Group</label>
+                <input type="text" value="All Datacenter Distribution Points" disabled style="background:#f0f0f0;color:#555;cursor:not-allowed">
+                <div class="help-text">Hardcoded — content always distributes to All Datacenter Distribution Points.</div>
             </div>
         </fieldset>
 
@@ -452,8 +452,7 @@ $HttpServerBlock = {
         'appName':           'Application Name',
         'contentLocation':   'Content Location',
         'installCmd':        'Install Command',
-        'limitingCollection':'Limiting Collection',
-        'dpGroup':           'Distribution Point Group'
+        'limitingCollection':'Limiting Collection'
     };
 
     function validateField(fieldId) {
@@ -613,7 +612,6 @@ $HttpServerBlock = {
             InstallCommand:                  document.getElementById('installCmd').value,
             UninstallCommand:                document.getElementById('uninstallCmd').value,
             DeploymentTypeName:              document.getElementById('deployTypeName').value,
-            DPGroupName:                     document.getElementById('dpGroup').value,
             LimitingCollectionName:          document.getElementById('limitingCollection').value,
             InstallCollectionName:           document.getElementById('installCollection').value || null,
             UninstallCollectionName:         document.getElementById('uninstallCollection').value || null,
@@ -798,7 +796,7 @@ function Invoke-SCCMDeployment {
     $InstallCommand                   = $Config.InstallCommand
     $UninstallCommand                 = if ($Config.UninstallCommand) { $Config.UninstallCommand } else { "" }
     $DeploymentTypeName               = $Config.DeploymentTypeName
-    $DPGroupName                      = $Config.DPGroupName
+    $DPGroupName                      = 'All Datacenter Distribution Points'
     $LimitingCollectionName           = $Config.LimitingCollectionName
     $InstallCollectionName            = $Config.InstallCollectionName
     $UninstallCollectionName          = $Config.UninstallCollectionName
@@ -1217,57 +1215,61 @@ function Invoke-SCCMDeployment {
             }
 
             #--- Create install collection ---
-            Invoke-Step -Name "Create device collection '$InstallCollectionName'" -Script {
-                $limiter = Get-CMDeviceCollection -Name $LimitingCollectionName -ErrorAction SilentlyContinue
-                if (-not $limiter) { throw "Limiting collection '$LimitingCollectionName' not found." }
+            Invoke-Step -Name "Create device collection '$InstallCollectionName-UAT'" -Script {
+                $limiter = Get-CMDeviceCollection -Name '__PACKAGING_ROOT_COLLECTION' -ErrorAction SilentlyContinue
+                if (-not $limiter) { throw "Limiting collection '__PACKAGING_ROOT_COLLECTION' not found." }
 
-                $existing = Get-CMDeviceCollection -Name $InstallCollectionName -ErrorAction SilentlyContinue
+                $collectionName = "$InstallCollectionName-UAT"
+                $existing = Get-CMDeviceCollection -Name $collectionName -ErrorAction SilentlyContinue
                 if (-not $existing) {
                     if (-not $WhatIf) {
-                        New-CMDeviceCollection -Name $InstallCollectionName `
-                            -LimitingCollectionId $limiter.CollectionID -ErrorAction Stop | Out-Null
+                        New-CMDeviceCollection -Name $collectionName `
+                            -LimitingCollectionId $limiter.CollectionID `
+                            -Comment '~~UAT~~' -ErrorAction Stop | Out-Null
                         Write-Log "Collection created, waiting for provider replication..."
                         $timeout    = [datetime]::UtcNow.AddMinutes($CollectionCreationTimeoutMinutes)
                         $retryCount = 0
                         do {
                             Start-Sleep -Seconds 3
                             $retryCount++
-                            $existing = Get-CMDeviceCollection -Name $InstallCollectionName -ErrorAction SilentlyContinue
+                            $existing = Get-CMDeviceCollection -Name $collectionName -ErrorAction SilentlyContinue
                             if ($existing) { Write-Log "Collection verified after $retryCount attempt(s)" -Level 'Success'; break }
                             if ([datetime]::UtcNow -gt $timeout) { throw "Collection creation timed out." }
                         } while (-not $existing)
-                        $createdObjects.Collections += $InstallCollectionName
+                        $createdObjects.Collections += $collectionName
                     } else {
-                        Write-Log "[WHATIF] Would create device collection '$InstallCollectionName'"
+                        Write-Log "[WHATIF] Would create device collection '$collectionName'"
                     }
                 } else {
-                    Write-Log "Collection '$InstallCollectionName' already exists"
+                    Write-Log "Collection '$collectionName' already exists"
                 }
             }
 
             #--- Create uninstall collection ---
-            Invoke-Step -Name "Create device collection '$UninstallCollectionName'" -Script {
-                $limiter = Get-CMDeviceCollection -Name $LimitingCollectionName -ErrorAction SilentlyContinue
-                if (-not $limiter) { throw "Limiting collection '$LimitingCollectionName' not found." }
+            Invoke-Step -Name "Create device collection '$UninstallCollectionName-UAT'" -Script {
+                $limiter = Get-CMDeviceCollection -Name '__PACKAGING_ROOT_COLLECTION' -ErrorAction SilentlyContinue
+                if (-not $limiter) { throw "Limiting collection '__PACKAGING_ROOT_COLLECTION' not found." }
 
-                $existing = Get-CMDeviceCollection -Name $UninstallCollectionName -ErrorAction SilentlyContinue
+                $collectionName = "$UninstallCollectionName-UAT"
+                $existing = Get-CMDeviceCollection -Name $collectionName -ErrorAction SilentlyContinue
                 if (-not $existing) {
                     if (-not $WhatIf) {
-                        New-CMDeviceCollection -Name $UninstallCollectionName `
-                            -LimitingCollectionId $limiter.CollectionID -ErrorAction Stop | Out-Null
+                        New-CMDeviceCollection -Name $collectionName `
+                            -LimitingCollectionId $limiter.CollectionID `
+                            -Comment '~~UAT~~' -ErrorAction Stop | Out-Null
                         Write-Log "Collection created, waiting for provider replication..."
                         $timeout    = [datetime]::UtcNow.AddMinutes($CollectionCreationTimeoutMinutes)
                         $retryCount = 0
                         do {
                             Start-Sleep -Seconds 3
                             $retryCount++
-                            $existing = Get-CMDeviceCollection -Name $UninstallCollectionName -ErrorAction SilentlyContinue
+                            $existing = Get-CMDeviceCollection -Name $collectionName -ErrorAction SilentlyContinue
                             if ($existing) { Write-Log "Collection verified after $retryCount attempt(s)" -Level 'Success'; break }
                             if ([datetime]::UtcNow -gt $timeout) { throw "Collection creation timed out." }
                         } while (-not $existing)
-                        $createdObjects.Collections += $UninstallCollectionName
+                        $createdObjects.Collections += $collectionName
                     } else {
-                        Write-Log "[WHATIF] Would create device collection '$UninstallCollectionName'"
+                        Write-Log "[WHATIF] Would create device collection '$collectionName'"
                     }
                 } else {
                     Write-Log "Collection '$UninstallCollectionName' already exists"
@@ -1456,7 +1458,6 @@ try {
                     InstallCommand                   = $config.InstallCommand
                     UninstallCommand                 = $config.UninstallCommand
                     DeploymentTypeName               = $config.DeploymentTypeName
-                    DPGroupName                      = $config.DPGroupName
                     LimitingCollectionName           = $config.LimitingCollectionName
                     InstallCollectionName            = $config.InstallCollectionName
                     UninstallCollectionName          = $config.UninstallCollectionName
