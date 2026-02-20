@@ -364,6 +364,32 @@ $HttpServerBlock = {
                     </div>
                 </div>
             </fieldset>
+
+            <fieldset class="fieldset">
+                <legend>Windows Installer Detection (optional)</legend>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Product Code</label>
+                        <input type="text" id="detectionMsiProductCode" placeholder="{XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX}">
+                    </div>
+                    <div class="form-group">
+                        <label>Version Operator</label>
+                        <select id="detectionMsiVersionOp">
+                            <option value="Exists">Exists (no version check)</option>
+                            <option value="Equals">Equals</option>
+                            <option value="GreaterThan">GreaterThan</option>
+                            <option value="GreaterEquals">GreaterEquals</option>
+                            <option value="LessThan">LessThan</option>
+                            <option value="LessEquals">LessEquals</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Product Version <span style="font-weight:normal;color:#666">(required when operator is not Exists)</span></label>
+                    <input type="text" id="detectionMsiVersion" placeholder="1.2.3.4">
+                </div>
+                <div class="help-text">Uses the Windows Installer (MSI) product registration database — the most reliable detection for MSI-based applications. Leave Product Code blank to skip.</div>
+            </fieldset>
         </fieldset>
     </div>
 
@@ -609,7 +635,10 @@ $HttpServerBlock = {
             DetectionFileName:        document.getElementById('detectionFileName').value.trim()         || null,
             DetectionFileVersion:     document.getElementById('detectionFileVersion').value.trim()      || null,
             DetectionDirPath:         document.getElementById('detectionDirPath').value.trim()          || null,
-            DetectionDirName:         document.getElementById('detectionDirName').value.trim()          || null
+            DetectionDirName:         document.getElementById('detectionDirName').value.trim()          || null,
+            DetectionMsiProductCode:  document.getElementById('detectionMsiProductCode').value.trim()   || null,
+            DetectionMsiVersionOp:    document.getElementById('detectionMsiVersionOp').value            || 'Exists',
+            DetectionMsiVersion:      document.getElementById('detectionMsiVersion').value.trim()       || null
         };
     }
 
@@ -794,6 +823,9 @@ function Invoke-SCCMDeployment {
     $DetectionFileVersion     = $Config.DetectionFileVersion
     $DetectionDirPath         = $Config.DetectionDirPath
     $DetectionDirName         = $Config.DetectionDirName
+    $DetectionMsiProductCode  = $Config.DetectionMsiProductCode
+    $DetectionMsiVersionOp    = if ($Config.DetectionMsiVersionOp) { $Config.DetectionMsiVersionOp } else { 'Exists' }
+    $DetectionMsiVersion      = $Config.DetectionMsiVersion
 
     $ErrorActionPreference = 'Stop'
 
@@ -1041,9 +1073,9 @@ function Invoke-SCCMDeployment {
                     $detectionClauses += New-CMDetectionClauseFile `
                         -Path $DetectionFilePath `
                         -FileName $DetectionFileName `
-                        -Value Displayname `
-                        -PropertyType String `
-                        -ExpressionOperator Equals `
+                        -Value `
+                        -PropertyType Version `
+                        -ExpressionOperator GreaterEquals `
                         -ExpectedValue $DetectionFileVersion
                 } else {
                     $detectionClauses += New-CMDetectionClauseFile `
@@ -1061,6 +1093,21 @@ function Invoke-SCCMDeployment {
                     -DirectoryName $DetectionDirName `
                     -Existence
                 Write-Log "Directory detection clause added: $DetectionDirPath\$DetectionDirName"
+            }
+
+            # Windows Installer (MSI ProductCode) detection — most reliable for MSI-based apps.
+            # New-CMDetectionClauseWindowsInstaller queries the Windows Installer product
+            # registration database rather than the registry, so it survives repairs/patches.
+            if (-not [string]::IsNullOrWhiteSpace($DetectionMsiProductCode)) {
+                $msiDetectParams = @{ ProductCode = $DetectionMsiProductCode }
+                if ($DetectionMsiVersionOp -and $DetectionMsiVersionOp -ne 'Exists') {
+                    $msiDetectParams['ProductVersion']         = $DetectionMsiVersion
+                    $msiDetectParams['ProductVersionOperator'] = $DetectionMsiVersionOp
+                } else {
+                    $msiDetectParams['ProductVersionOperator'] = 'Exists'
+                }
+                $detectionClauses += New-CMDetectionClauseWindowsInstaller @msiDetectParams
+                Write-Log "Windows Installer detection clause added: ProductCode=$DetectionMsiProductCode (operator=$DetectionMsiVersionOp)"
             }
 
             Write-Log "Detection clauses built: $($detectionClauses.Count) clause(s)" -Level 'Success'
@@ -1425,6 +1472,9 @@ try {
                     DetectionFileVersion             = $config.DetectionFileVersion
                     DetectionDirPath                 = $config.DetectionDirPath
                     DetectionDirName                 = $config.DetectionDirName
+                    DetectionMsiProductCode          = $config.DetectionMsiProductCode
+                    DetectionMsiVersionOp            = $config.DetectionMsiVersionOp
+                    DetectionMsiVersion              = $config.DetectionMsiVersion
                 }
 
                 Invoke-SCCMDeployment -Config $params
