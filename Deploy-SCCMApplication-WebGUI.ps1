@@ -1141,7 +1141,6 @@ function Invoke-SCCMDeployment {
                             -ErrorAction Stop | Out-Null
                         Write-Log "MSI deployment type created (detection via ProductCode)" -Level 'Success'
                     } else {
-                        Write-Log "Passing $($detectionClauses.Count) detection clause(s) to Add-CMScriptDeploymentType"
                         $scriptDtParams = @{
                             ContentLocation    = $ContentLocation
                             InstallCommand     = $InstallCommand
@@ -1152,8 +1151,18 @@ function Invoke-SCCMDeployment {
                         if (-not [string]::IsNullOrWhiteSpace($UninstallCommand)) {
                             $scriptDtParams['UninstallCommand'] = $UninstallCommand
                         }
+                        # Add-CMScriptDeploymentType requires -AddDetectionClause to avoid
+                        # prompting for -ScriptLanguage, but in some module versions it does
+                        # not persist the clauses. Set-CMScriptDeploymentType is the call
+                        # that actually writes them to the provider.
                         Add-CMScriptDeploymentType @commonParams @scriptDtParams -ErrorAction Stop | Out-Null
-                        Write-Log "Deployment type created with $($detectionClauses.Count) detection clause(s)" -Level 'Success'
+                        Write-Log "Script/EXE deployment type created"
+                        Set-CMScriptDeploymentType `
+                            -ApplicationName    $AppName `
+                            -DeploymentTypeName $DeploymentTypeName `
+                            -AddDetectionClause $detectionClauses `
+                            -ErrorAction Stop | Out-Null
+                        Write-Log "Detection clauses persisted: $($detectionClauses.Count) clause(s)" -Level 'Success'
                     }
                 } else {
                     if ($isMsi) {
