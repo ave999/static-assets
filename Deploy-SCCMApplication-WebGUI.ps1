@@ -1141,20 +1141,24 @@ function Invoke-SCCMDeployment {
                             -ErrorAction Stop | Out-Null
                         Write-Log "MSI deployment type created (detection via ProductCode)" -Level 'Success'
                     } else {
+                        # Create the DT with a placeholder script detection so that
+                        # Add-CMScriptDeploymentType does not prompt for -ScriptLanguage.
+                        # The real clause-based detection is applied immediately after via
+                        # Set-CMScriptDeploymentType. Passing the clause objects to BOTH
+                        # cmdlets causes "CMPSNoMask = True" because the SDK marks each
+                        # clause object as consumed after the first call; using a
+                        # placeholder here keeps the clause objects fresh for the Set call.
                         $scriptDtParams = @{
-                            ContentLocation    = $ContentLocation
-                            InstallCommand     = $InstallCommand
-                            ContentFallback    = $true
-                            EnableBranchCache  = $true
-                            AddDetectionClause = $detectionClauses
+                            ContentLocation = $ContentLocation
+                            InstallCommand  = $InstallCommand
+                            ContentFallback = $true
+                            EnableBranchCache = $true
+                            ScriptLanguage  = 'PowerShell'
+                            ScriptText      = 'return $false'
                         }
                         if (-not [string]::IsNullOrWhiteSpace($UninstallCommand)) {
                             $scriptDtParams['UninstallCommand'] = $UninstallCommand
                         }
-                        # Add-CMScriptDeploymentType requires -AddDetectionClause to avoid
-                        # prompting for -ScriptLanguage, but in some module versions it does
-                        # not persist the clauses. Set-CMScriptDeploymentType is the call
-                        # that actually writes them to the provider.
                         Add-CMScriptDeploymentType @commonParams @scriptDtParams -ErrorAction Stop | Out-Null
                         Write-Log "Script/EXE deployment type created"
                         Set-CMScriptDeploymentType `
@@ -1162,7 +1166,7 @@ function Invoke-SCCMDeployment {
                             -DeploymentTypeName $DeploymentTypeName `
                             -AddDetectionClause $detectionClauses `
                             -ErrorAction Stop | Out-Null
-                        Write-Log "Detection clauses persisted: $($detectionClauses.Count) clause(s)" -Level 'Success'
+                        Write-Log "Detection clauses applied: $($detectionClauses.Count) clause(s)" -Level 'Success'
                     }
                 } else {
                     if ($isMsi) {
