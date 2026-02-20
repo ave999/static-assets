@@ -1141,28 +1141,18 @@ function Invoke-SCCMDeployment {
                             -ErrorAction Stop | Out-Null
                         Write-Log "MSI deployment type created (detection via ProductCode)" -Level 'Success'
                     } else {
-                        # Step 1: create the deployment type without detection clauses.
-                        # -AddDetectionClause inline is unreliable across ConfigMgr module
-                        # versions and mirrors how the console creates DTs internally.
                         $scriptDtParams = @{
-                            ContentLocation   = $ContentLocation
-                            InstallCommand    = $InstallCommand
-                            ContentFallback   = $true
-                            EnableBranchCache = $true
+                            ContentLocation    = $ContentLocation
+                            InstallCommand     = $InstallCommand
+                            ContentFallback    = $true
+                            EnableBranchCache  = $true
+                            AddDetectionClause = $detectionClauses
                         }
                         if (-not [string]::IsNullOrWhiteSpace($UninstallCommand)) {
                             $scriptDtParams['UninstallCommand'] = $UninstallCommand
                         }
                         Add-CMScriptDeploymentType @commonParams @scriptDtParams -ErrorAction Stop | Out-Null
-                        Write-Log "Script deployment type created"
-
-                        # Step 2: apply detection clauses separately via Set-CMScriptDeploymentType.
-                        Set-CMScriptDeploymentType `
-                            -ApplicationName    $AppName `
-                            -DeploymentTypeName $DeploymentTypeName `
-                            -AddDetectionClause $detectionClauses `
-                            -ErrorAction Stop | Out-Null
-                        Write-Log "Detection clauses applied: $($detectionClauses.Count) clause(s)" -Level 'Success'
+                        Write-Log "Deployment type created with $($detectionClauses.Count) detection clause(s)" -Level 'Success'
                     }
                 } else {
                     if ($isMsi) {
