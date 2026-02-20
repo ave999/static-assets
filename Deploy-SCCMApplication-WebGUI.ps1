@@ -274,11 +274,11 @@ $HttpServerBlock = {
             <div class="form-row">
                 <div class="form-group">
                     <label>Application Folder Path</label>
-                    <input type="text" id="appFolder" placeholder="Applications\Production">
+                    <input type="text" value="DSK\_BUILD" disabled style="background:#f0f0f0;color:#555;cursor:not-allowed">
                 </div>
                 <div class="form-group">
                     <label>Collection Folder Path</label>
-                    <input type="text" id="collectionFolder" placeholder="Collections\Applications\Production">
+                    <input type="text" value="DSK\Application Deployments\_STAGING" disabled style="background:#f0f0f0;color:#555;cursor:not-allowed">
                 </div>
             </div>
         </fieldset>
@@ -594,10 +594,6 @@ $HttpServerBlock = {
 
     function validateInputs() {
         const allValid  = validateAllFields();
-        const appFolder = document.getElementById('appFolder').value.trim();
-        const collFolder= document.getElementById('collectionFolder').value.trim();
-        if (appFolder  && /[<>:"|?*]/.test(appFolder))  { alert('Application Folder Path contains illegal characters (<>:"|?*)'); return false; }
-        if (collFolder && /[<>:"|?*]/.test(collFolder)) { alert('Collection Folder Path contains illegal characters (<>:"|?*)');  return false; }
         if (!allValid) { switchTab('config'); return false; }
         return true;
     }
@@ -615,8 +611,6 @@ $HttpServerBlock = {
             LimitingCollectionName:          document.getElementById('limitingCollection').value,
             InstallCollectionName:           document.getElementById('installCollection').value || null,
             UninstallCollectionName:         document.getElementById('uninstallCollection').value || null,
-            ApplicationFolder:               document.getElementById('appFolder').value,
-            CollectionFolder:                document.getElementById('collectionFolder').value,
             MaxRuntimeMins:                  parseInt(document.getElementById('maxRuntime').value),
             CollectionCreationTimeoutMinutes:parseInt(document.getElementById('collectionTimeout').value),
             LogFilePath:                     document.getElementById('enableLogging').checked ? (document.getElementById('logPath').value.trim() || null) : null,
@@ -800,8 +794,8 @@ function Invoke-SCCMDeployment {
     $LimitingCollectionName           = $Config.LimitingCollectionName
     $InstallCollectionName            = $Config.InstallCollectionName
     $UninstallCollectionName          = $Config.UninstallCollectionName
-    $ApplicationFolder                = if ($Config.ApplicationFolder) { $Config.ApplicationFolder } else { "" }
-    $CollectionFolder                 = if ($Config.CollectionFolder) { $Config.CollectionFolder } else { "" }
+    $ApplicationFolder                = 'DSK\_BUILD'
+    $CollectionFolder                 = 'DSK\Application Deployments\_STAGING'
     $MaxRuntimeMins                   = if ($Config.MaxRuntimeMins) { $Config.MaxRuntimeMins } else { 60 }
     $CollectionCreationTimeoutMinutes = if ($Config.CollectionCreationTimeoutMinutes) { $Config.CollectionCreationTimeoutMinutes } else { 5 }
     $LogFilePath                      = $Config.LogFilePath
@@ -1319,7 +1313,7 @@ function Invoke-SCCMDeployment {
             if (-not [string]::IsNullOrWhiteSpace($CollectionFolder)) {
                 Invoke-Step -Name "Move collections to folder '$CollectionFolder'" -Script {
                     $fullPath = "${SiteCode}:\DeviceCollection\${CollectionFolder}"
-                    foreach ($collName in @($InstallCollectionName, $UninstallCollectionName)) {
+                    foreach ($collName in @("$InstallCollectionName-UAT", "$UninstallCollectionName-UAT")) {
                         if (-not $WhatIf) {
                             $coll = Get-CMDeviceCollection -Name $collName -ErrorAction Stop
                             Move-CMObject -FolderPath $fullPath -InputObject $coll -ErrorAction Stop
@@ -1461,8 +1455,6 @@ try {
                     LimitingCollectionName           = $config.LimitingCollectionName
                     InstallCollectionName            = $config.InstallCollectionName
                     UninstallCollectionName          = $config.UninstallCollectionName
-                    ApplicationFolder                = $config.ApplicationFolder
-                    CollectionFolder                 = $config.CollectionFolder
                     MaxRuntimeMins                   = $config.MaxRuntimeMins
                     CollectionCreationTimeoutMinutes = $config.CollectionCreationTimeoutMinutes
                     LogFilePath                      = $config.LogFilePath
