@@ -274,7 +274,7 @@ $HttpServerBlock = {
             <div class="form-row">
                 <div class="form-group">
                     <label>Application Folder Path</label>
-                    <input type="text" value="DSK\_BUILD" disabled style="background:#f0f0f0;color:#555;cursor:not-allowed">
+                    <input type="text" value="DSK\_STAGING" disabled style="background:#f0f0f0;color:#555;cursor:not-allowed">
                 </div>
                 <div class="form-group">
                     <label>Collection Folder Path</label>
@@ -794,7 +794,7 @@ function Invoke-SCCMDeployment {
     $LimitingCollectionName           = $Config.LimitingCollectionName
     $InstallCollectionName            = $Config.InstallCollectionName
     $UninstallCollectionName          = $Config.UninstallCollectionName
-    $ApplicationFolder                = 'DSK\_BUILD'
+    $ApplicationFolder                = 'DSK\_STAGING'
     $CollectionFolder                 = 'DSK\Application Deployments\_STAGING'
     $MaxRuntimeMins                   = if ($Config.MaxRuntimeMins) { $Config.MaxRuntimeMins } else { 60 }
     $CollectionCreationTimeoutMinutes = if ($Config.CollectionCreationTimeoutMinutes) { $Config.CollectionCreationTimeoutMinutes } else { 5 }
@@ -1141,18 +1141,28 @@ function Invoke-SCCMDeployment {
                             -ErrorAction Stop | Out-Null
                         Write-Log "MSI deployment type created (detection via ProductCode)" -Level 'Success'
                     } else {
+                        # Step 1: create the deployment type without detection clauses.
+                        # -AddDetectionClause inline is unreliable across ConfigMgr module
+                        # versions and mirrors how the console creates DTs internally.
                         $scriptDtParams = @{
-                            ContentLocation    = $ContentLocation
-                            InstallCommand     = $InstallCommand
-                            ContentFallback    = $true
-                            EnableBranchCache  = $true
-                            AddDetectionClause = $detectionClauses
+                            ContentLocation   = $ContentLocation
+                            InstallCommand    = $InstallCommand
+                            ContentFallback   = $true
+                            EnableBranchCache = $true
                         }
                         if (-not [string]::IsNullOrWhiteSpace($UninstallCommand)) {
                             $scriptDtParams['UninstallCommand'] = $UninstallCommand
                         }
                         Add-CMScriptDeploymentType @commonParams @scriptDtParams -ErrorAction Stop | Out-Null
-                        Write-Log "Deployment type created with $($detectionClauses.Count) detection clause(s)" -Level 'Success'
+                        Write-Log "Script deployment type created"
+
+                        # Step 2: apply detection clauses separately via Set-CMScriptDeploymentType.
+                        Set-CMScriptDeploymentType `
+                            -ApplicationName    $AppName `
+                            -DeploymentTypeName $DeploymentTypeName `
+                            -AddDetectionClause $detectionClauses `
+                            -ErrorAction Stop | Out-Null
+                        Write-Log "Detection clauses applied: $($detectionClauses.Count) clause(s)" -Level 'Success'
                     }
                 } else {
                     if ($isMsi) {
