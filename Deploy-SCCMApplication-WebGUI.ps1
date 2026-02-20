@@ -1141,6 +1141,7 @@ function Invoke-SCCMDeployment {
                             -ErrorAction Stop | Out-Null
                         Write-Log "MSI deployment type created (detection via ProductCode)" -Level 'Success'
                     } else {
+                        Write-Log "Passing $($detectionClauses.Count) detection clause(s) to Add-CMScriptDeploymentType"
                         $scriptDtParams = @{
                             ContentLocation    = $ContentLocation
                             InstallCommand     = $InstallCommand
