@@ -1185,9 +1185,17 @@ function Invoke-SCCMDeployment {
                         ) `
                         -RuleOperator OneOf
 
-                    Set-CMScriptDeploymentType -ApplicationName $AppName `
-                        -DeploymentTypeName $DeploymentTypeName `
-                        -AddRequirement $osRule -ErrorAction Stop | Out-Null
+                    $setDtParams = @{
+                        ApplicationName    = $AppName
+                        DeploymentTypeName = $DeploymentTypeName
+                        AddRequirement     = $osRule
+                        ErrorAction        = 'Stop'
+                    }
+                    if ($isMsi) {
+                        Set-CMMsiDeploymentType @setDtParams | Out-Null
+                    } else {
+                        Set-CMScriptDeploymentType @setDtParams | Out-Null
+                    }
 
                     Write-Log "OS requirements configured: Windows 11 (x64 + ARM64)" -Level 'Success'
                 } else {
