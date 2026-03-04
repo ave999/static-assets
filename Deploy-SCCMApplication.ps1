@@ -751,6 +751,20 @@ function Invoke-SCCMDeployment {
         }
         if ($createdObjects.Application) {
             try { Remove-CMApplication -Name $createdObjects.Application -Force -ErrorAction Stop }
+            catch [System.ArgumentNullException] {
+                # CM SDK bug: verify via WMI whether the app is actually gone.
+                $rbNameEsc = $createdObjects.Application -replace "'", "''"
+                $stillExists = Get-WmiObject -Namespace "root\SMS\Site_$SiteCode" `
+                    -Class SMS_Application `
+                    -Filter "LocalizedDisplayName='$rbNameEsc' AND IsLatest=1" `
+                    -ComputerName $SiteServerFqdn `
+                    -ErrorAction SilentlyContinue
+                if ($stillExists) {
+                    Write-Log "Failed to remove application: $_" -Level 'Error'
+                } else {
+                    Write-Log "Remove-CMApplication threw ArgumentNullException but application is gone from SMS Provider." -Level 'Warning'
+                }
+            }
             catch { Write-Log "Failed to remove application: $_" -Level 'Error' }
         }
         Write-Log "Rollback completed. Verify SCCM console for any remaining objects." -Level 'Warning'
@@ -1004,36 +1018,50 @@ function Invoke-SCCMDeployment {
                         SlowNetworkDeploymentMode = 'Download'
                     }
 
-                    if ($isMsi) {
-                        Write-Log "MSI detected ($msiFileName) — using Add-CMMsiDeploymentType (ProductCode auto-detection)"
-                        Add-CMMsiDeploymentType @commonParams `
-                            -ContentLocation $msiFilePath `
-                            -ContentFallback `
-                            -EnableBranchCache `
-                            -ErrorAction Stop | Out-Null
-                        Write-Log "MSI deployment type created (detection via ProductCode)" -Level 'Success'
-                    } else {
-                        # Add-CMScriptDeploymentType both creates the deployment type AND
-                        # persists the detection clauses in a single call. Passing
-                        # AddDetectionClause here is required to switch the DT into
-                        # clause-based detection mode (as opposed to Windows Installer mode).
-                        # The clauses are built fresh via $BuildDetectionClauses so that the
-                        # CMPSNoMask flag on each clause object has not yet been set.
-                        # Do NOT follow this with a Set-CMScriptDeploymentType -AddDetectionClause
-                        # call — that would append a second copy of every clause, producing
-                        # duplicates.
-                        $scriptDtParams = @{
-                            ContentLocation   = $ContentLocation
-                            InstallCommand    = $InstallCommand
-                            ContentFallback   = $true
-                            EnableBranchCache = $true
-                            AddDetectionClause = (& $BuildDetectionClauses)
+                    try {
+                        if ($isMsi) {
+                            Write-Log "MSI detected ($msiFileName) — using Add-CMMsiDeploymentType (ProductCode auto-detection)"
+                            Add-CMMsiDeploymentType @commonParams `
+                                -ContentLocation $msiFilePath `
+                                -ContentFallback `
+                                -EnableBranchCache `
+                                -ErrorAction Stop | Out-Null
+                            Write-Log "MSI deployment type created (detection via ProductCode)" -Level 'Success'
+                        } else {
+                            # Add-CMScriptDeploymentType both creates the deployment type AND
+                            # persists the detection clauses in a single call. Passing
+                            # AddDetectionClause here is required to switch the DT into
+                            # clause-based detection mode (as opposed to Windows Installer mode).
+                            # The clauses are built fresh via $BuildDetectionClauses so that the
+                            # CMPSNoMask flag on each clause object has not yet been set.
+                            # Do NOT follow this with a Set-CMScriptDeploymentType -AddDetectionClause
+                            # call — that would append a second copy of every clause, producing
+                            # duplicates.
+                            $scriptDtParams = @{
+                                ContentLocation   = $ContentLocation
+                                InstallCommand    = $InstallCommand
+                                ContentFallback   = $true
+                                EnableBranchCache = $true
+                                AddDetectionClause = (& $BuildDetectionClauses)
+                            }
+                            if (-not [string]::IsNullOrWhiteSpace($UninstallCommand)) {
+                                $scriptDtParams['UninstallCommand'] = $UninstallCommand
+                            }
+                            Add-CMScriptDeploymentType @commonParams @scriptDtParams -ErrorAction Stop | Out-Null
+                            Write-Log "Script/EXE deployment type created with $($detectionClauses.Count) detection clause(s)." -Level 'Success'
                         }
-                        if (-not [string]::IsNullOrWhiteSpace($UninstallCommand)) {
-                            $scriptDtParams['UninstallCommand'] = $UninstallCommand
-                        }
-                        Add-CMScriptDeploymentType @commonParams @scriptDtParams -ErrorAction Stop | Out-Null
-                        Write-Log "Script/EXE deployment type created with $($detectionClauses.Count) detection clause(s)." -Level 'Success'
+                    } catch [System.ArgumentNullException] {
+                        # CM SDK bug: cmdlet may throw ArgumentNullException during result
+                        # processing even after writing the DT to the SMS Provider.
+                        # Verify via WMI directly before deciding to fail.
+                        $dtNameEsc = $DeploymentTypeName -replace "'", "''"
+                        $wmiDt = Get-WmiObject -Namespace "root\SMS\Site_$SiteCode" `
+                            -Class SMS_DeploymentType `
+                            -Filter "LocalizedDisplayName='$dtNameEsc' AND IsLatest=1" `
+                            -ComputerName $SiteServerFqdn `
+                            -ErrorAction SilentlyContinue
+                        if (-not $wmiDt) { throw }
+                        Write-Log "Add-CM*DeploymentType threw ArgumentNullException but deployment type was created in SMS Provider — continuing." -Level 'Warning'
                     }
                 } else {
                     if ($isMsi) {
