@@ -49,74 +49,74 @@ $HttpServerBlock = {
 <title>SCCM Application Deployment Tool</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Segoe UI',system-ui,sans-serif;background:#12121e;color:#ddd;min-height:100vh}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:#f5f7f5;color:#212529;min-height:100vh}
 .container{max-width:1080px;margin:0 auto;padding:20px}
 .header{text-align:center;padding:24px 0 16px}
-.header h1{color:#5ab4e0;font-size:1.75rem;font-weight:600}
-.header p{color:#666;margin-top:6px;font-size:.9rem}
+.header h1{color:#00693E;font-size:1.75rem;font-weight:600}
+.header p{color:#6c757d;margin-top:6px;font-size:.9rem}
 /* ── Tabs ── */
-.tabs{display:flex;border-bottom:2px solid #1a3a56;margin-bottom:22px}
-.tab-btn{padding:10px 26px;cursor:pointer;background:none;border:none;color:#777;font-size:.9rem;border-bottom:3px solid transparent;margin-bottom:-2px;transition:color .15s,border-color .15s}
-.tab-btn:hover{color:#aaa}
-.tab-btn.active{color:#5ab4e0;border-bottom-color:#004E89}
+.tabs{display:flex;border-bottom:2px solid #c8dfd3;margin-bottom:22px}
+.tab-btn{padding:10px 26px;cursor:pointer;background:none;border:none;color:#6c757d;font-size:.9rem;border-bottom:3px solid transparent;margin-bottom:-2px;transition:color .15s,border-color .15s}
+.tab-btn:hover{color:#333}
+.tab-btn.active{color:#00693E;border-bottom-color:#00693E}
 .tab-content{display:none}.tab-content.active{display:block}
 /* ── Forms ── */
-h2{font-size:1.1rem;font-weight:600;color:#bbb;margin-bottom:18px}
+h2{font-size:1.1rem;font-weight:600;color:#333;margin-bottom:18px}
 .form-group{margin-bottom:14px}
 .form-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 @media(max-width:620px){.form-row{grid-template-columns:1fr}}
-label{display:block;font-size:.8rem;color:#999;margin-bottom:5px;font-weight:500}
-label.required::after{content:' *';color:#e57373}
+label{display:block;font-size:.8rem;color:#495057;margin-bottom:5px;font-weight:500}
+label.required::after{content:' *';color:#dc3545}
 input[type=text],input[type=number],textarea,select{
-  width:100%;padding:8px 11px;background:#1c1c2e;border:1px solid #333;
-  border-radius:4px;color:#ddd;font-size:.875rem;outline:none;transition:border-color .15s}
-input[type=text]:focus,input[type=number]:focus,textarea:focus,select:focus{border-color:#5ab4e0}
-input[readonly]{background:#161622;color:#666;cursor:default}
+  width:100%;padding:8px 11px;background:#fff;border:1px solid #ced4da;
+  border-radius:4px;color:#212529;font-size:.875rem;outline:none;transition:border-color .15s,box-shadow .15s}
+input[type=text]:focus,input[type=number]:focus,textarea:focus,select:focus{border-color:#00693E;box-shadow:0 0 0 3px rgba(0,105,62,.12)}
+input[readonly]{background:#f8f9fa;color:#6c757d;cursor:default}
 textarea{resize:vertical;min-height:58px;font-family:inherit}
-select option{background:#1c1c2e}
-.help-text{font-size:.76rem;color:#555;margin-top:4px}
-.error-message{font-size:.76rem;color:#e57373;margin-top:4px;display:none}
-.has-error input,.has-error select,.has-error textarea{border-color:#e57373 !important}
+select option{background:#fff}
+.help-text{font-size:.76rem;color:#6c757d;margin-top:4px}
+.error-message{font-size:.76rem;color:#dc3545;margin-top:4px;display:none}
+.has-error input,.has-error select,.has-error textarea{border-color:#dc3545 !important}
 .has-error .error-message{display:block}
 /* ── Fieldset ── */
-fieldset{border:1px solid #1a3a56;border-radius:6px;padding:14px 16px;margin-bottom:14px}
-legend{padding:0 8px;color:#5ab4e0;font-size:.8rem;font-weight:600;letter-spacing:.03em}
+fieldset{border:1px solid #c8dfd3;border-radius:6px;padding:14px 16px;margin-bottom:14px}
+legend{padding:0 8px;color:#00693E;font-size:.8rem;font-weight:600;letter-spacing:.03em}
 /* ── Detection sub-sections ── */
-.det-section{border-left:2px solid #004E89;padding:10px 14px;margin-bottom:14px}
+.det-section{border-left:2px solid #00693E;padding:10px 14px;margin-bottom:14px}
 .det-section:last-child{margin-bottom:0}
-.det-title{font-size:.75rem;font-weight:600;color:#5ab4e0;letter-spacing:.05em;text-transform:uppercase;margin-bottom:12px}
+.det-title{font-size:.75rem;font-weight:600;color:#00693E;letter-spacing:.05em;text-transform:uppercase;margin-bottom:12px}
 /* ── Checkboxes ── */
 .checkbox-group{display:flex;align-items:center;gap:10px;margin-bottom:12px}
-.checkbox-group input[type=checkbox]{width:15px;height:15px;accent-color:#5ab4e0;cursor:pointer;flex-shrink:0}
-.checkbox-group label{margin:0;color:#bbb;font-size:.875rem;font-weight:400;cursor:pointer}
+.checkbox-group input[type=checkbox]{width:15px;height:15px;accent-color:#00693E;cursor:pointer;flex-shrink:0}
+.checkbox-group label{margin:0;color:#333;font-size:.875rem;font-weight:400;cursor:pointer}
 /* ── Validation summary ── */
-.validation-summary{background:#2a1515;border:1px solid #c62828;border-radius:6px;padding:12px 16px;margin-bottom:16px;display:none}
+.validation-summary{background:#fff5f5;border:1px solid #f5c2c7;border-radius:6px;padding:12px 16px;margin-bottom:16px;display:none}
 .validation-summary.visible{display:block}
-.validation-summary h3{color:#ef9a9a;font-size:.85rem;margin-bottom:8px}
+.validation-summary h3{color:#842029;font-size:.85rem;margin-bottom:8px}
 .validation-summary ul{padding-left:18px}
-.validation-summary li{color:#ef9a9a;font-size:.82rem;line-height:1.6}
+.validation-summary li{color:#842029;font-size:.82rem;line-height:1.6}
 /* ── Log ── */
-.log-container{background:#0a0a14;border:1px solid #1a3a56;border-radius:6px;padding:12px 14px;font-family:'Consolas','Courier New',monospace;font-size:.8rem;height:420px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;color:#bbb}
+.log-container{background:#fff;border:1px solid #c8dfd3;border-radius:6px;padding:12px 14px;font-family:'Consolas','Courier New',monospace;font-size:.8rem;height:420px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;color:#333}
 .log-controls{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
-.log-ok{color:#66bb6a}.log-fail{color:#ef5350}.log-warn{color:#ffa726}.log-step{color:#5ab4e0}.log-info{color:#bbb}
+.log-ok{color:#00693E}.log-fail{color:#dc3545}.log-warn{color:#b45309}.log-step{color:#1565c0}.log-info{color:#495057}
 /* ── Badge ── */
 .status-badge{display:inline-block;padding:2px 10px;border-radius:10px;font-size:.72rem;font-weight:700;vertical-align:middle;margin-left:8px;text-transform:uppercase;letter-spacing:.05em}
-.badge-ready{background:#1a2e1a;color:#66bb6a}
-.badge-running{background:#012948;color:#5ab4e0}
-.badge-done{background:#1a2e1a;color:#66bb6a}
-.badge-error{background:#2e1010;color:#ef5350}
+.badge-ready{background:#d1fae5;color:#065f46}
+.badge-running{background:#dbeafe;color:#1e40af}
+.badge-done{background:#d1fae5;color:#065f46}
+.badge-error{background:#fee2e2;color:#991b1b}
 /* ── Buttons ── */
-.actions{display:flex;gap:12px;margin-top:22px;padding-top:18px;border-top:1px solid #1a3a56;flex-wrap:wrap}
+.actions{display:flex;gap:12px;margin-top:22px;padding-top:18px;border-top:1px solid #c8dfd3;flex-wrap:wrap}
 .btn{padding:9px 22px;border-radius:5px;border:none;cursor:pointer;font-size:.875rem;font-weight:600;transition:filter .15s,opacity .15s}
-.btn:hover:not(:disabled){filter:brightness(1.12)}
+.btn:hover:not(:disabled){filter:brightness(1.08)}
 .btn:disabled{opacity:.38;cursor:not-allowed}
-.btn-deploy{background:#2e7d32;color:#fff}
+.btn-deploy{background:#00693E;color:#fff}
 .btn-whatif{background:#1565c0;color:#fff}
-.btn-sm{padding:5px 13px;font-size:.78rem;border-radius:4px;border:1px solid #333;background:#1c1c2e;color:#aaa;cursor:pointer;transition:border-color .15s,color .15s}
-.btn-sm:hover{border-color:#5ab4e0;color:#5ab4e0}
-.btn-sm.active{border-color:#5ab4e0;color:#5ab4e0;background:#012948}
-.btn-reset{background:#4a1010;color:#ef9a9a;padding:5px 13px;font-size:.78rem;border-radius:4px;border:1px solid #c62828;cursor:pointer}
-.btn-reset:hover{background:#5a1515}
+.btn-sm{padding:5px 13px;font-size:.78rem;border-radius:4px;border:1px solid #ced4da;background:#fff;color:#495057;cursor:pointer;transition:border-color .15s,color .15s}
+.btn-sm:hover{border-color:#00693E;color:#00693E}
+.btn-sm.active{border-color:#00693E;color:#00693E;background:#f0faf4}
+.btn-reset{background:#fff;color:#842029;padding:5px 13px;font-size:.78rem;border-radius:4px;border:1px solid #f5c2c7;cursor:pointer}
+.btn-reset:hover{background:#fff5f5}
 </style>
 </head>
 <body>
