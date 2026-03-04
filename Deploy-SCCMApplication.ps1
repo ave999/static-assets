@@ -44,253 +44,506 @@ $HttpServerBlock = {
 <!DOCTYPE html>
 <html lang="en">
 <head>
-
-
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SCCM Application Deployment Tool</title>
-
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:#12121e;color:#ddd;min-height:100vh}
+.container{max-width:1080px;margin:0 auto;padding:20px}
+.header{text-align:center;padding:24px 0 16px}
+.header h1{color:#4fc3f7;font-size:1.75rem;font-weight:600}
+.header p{color:#666;margin-top:6px;font-size:.9rem}
+/* ── Tabs ── */
+.tabs{display:flex;border-bottom:2px solid #2a2a40;margin-bottom:22px}
+.tab-btn{padding:10px 26px;cursor:pointer;background:none;border:none;color:#777;font-size:.9rem;border-bottom:3px solid transparent;margin-bottom:-2px;transition:color .15s,border-color .15s}
+.tab-btn:hover{color:#aaa}
+.tab-btn.active{color:#4fc3f7;border-bottom-color:#4fc3f7}
+.tab-content{display:none}.tab-content.active{display:block}
+/* ── Forms ── */
+h2{font-size:1.1rem;font-weight:600;color:#bbb;margin-bottom:18px}
+.form-group{margin-bottom:14px}
+.form-row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:620px){.form-row{grid-template-columns:1fr}}
+label{display:block;font-size:.8rem;color:#999;margin-bottom:5px;font-weight:500}
+label.required::after{content:' *';color:#e57373}
+input[type=text],input[type=number],textarea,select{
+  width:100%;padding:8px 11px;background:#1c1c2e;border:1px solid #333;
+  border-radius:4px;color:#ddd;font-size:.875rem;outline:none;transition:border-color .15s}
+input[type=text]:focus,input[type=number]:focus,textarea:focus,select:focus{border-color:#4fc3f7}
+input[readonly]{background:#161622;color:#666;cursor:default}
+textarea{resize:vertical;min-height:58px;font-family:inherit}
+select option{background:#1c1c2e}
+.help-text{font-size:.76rem;color:#555;margin-top:4px}
+.error-message{font-size:.76rem;color:#e57373;margin-top:4px;display:none}
+.has-error input,.has-error select,.has-error textarea{border-color:#e57373 !important}
+.has-error .error-message{display:block}
+/* ── Fieldset ── */
+fieldset{border:1px solid #252538;border-radius:6px;padding:14px 16px;margin-bottom:14px}
+legend{padding:0 8px;color:#4fc3f7;font-size:.8rem;font-weight:600;letter-spacing:.03em}
+/* ── Checkboxes ── */
+.checkbox-group{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.checkbox-group input[type=checkbox]{width:15px;height:15px;accent-color:#4fc3f7;cursor:pointer;flex-shrink:0}
+.checkbox-group label{margin:0;color:#bbb;font-size:.875rem;font-weight:400;cursor:pointer}
+/* ── Validation summary ── */
+.validation-summary{background:#2a1515;border:1px solid #c62828;border-radius:6px;padding:12px 16px;margin-bottom:16px;display:none}
+.validation-summary.visible{display:block}
+.validation-summary h3{color:#ef9a9a;font-size:.85rem;margin-bottom:8px}
+.validation-summary ul{padding-left:18px}
+.validation-summary li{color:#ef9a9a;font-size:.82rem;line-height:1.6}
+/* ── Log ── */
+.log-container{background:#0a0a14;border:1px solid #252538;border-radius:6px;padding:12px 14px;font-family:'Consolas','Courier New',monospace;font-size:.8rem;height:420px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;color:#bbb}
+.log-controls{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
+.log-ok{color:#66bb6a}.log-fail{color:#ef5350}.log-warn{color:#ffa726}.log-step{color:#4fc3f7}.log-info{color:#bbb}
+/* ── Badge ── */
+.status-badge{display:inline-block;padding:2px 10px;border-radius:10px;font-size:.72rem;font-weight:700;vertical-align:middle;margin-left:8px;text-transform:uppercase;letter-spacing:.05em}
+.badge-ready{background:#1a2e1a;color:#66bb6a}
+.badge-running{background:#0e1e30;color:#4fc3f7}
+.badge-done{background:#1a2e1a;color:#66bb6a}
+.badge-error{background:#2e1010;color:#ef5350}
+/* ── Buttons ── */
+.actions{display:flex;gap:12px;margin-top:22px;padding-top:18px;border-top:1px solid #252538;flex-wrap:wrap}
+.btn{padding:9px 22px;border-radius:5px;border:none;cursor:pointer;font-size:.875rem;font-weight:600;transition:filter .15s,opacity .15s}
+.btn:hover:not(:disabled){filter:brightness(1.12)}
+.btn:disabled{opacity:.38;cursor:not-allowed}
+.btn-deploy{background:#1565c0;color:#fff}
+.btn-whatif{background:#37474f;color:#fff}
+.btn-sm{padding:5px 13px;font-size:.78rem;border-radius:4px;border:1px solid #333;background:#1c1c2e;color:#aaa;cursor:pointer;transition:border-color .15s,color .15s}
+.btn-sm:hover{border-color:#4fc3f7;color:#4fc3f7}
+.btn-sm.active{border-color:#4fc3f7;color:#4fc3f7;background:#0e1e30}
+.btn-reset{background:#4a1010;color:#ef9a9a;padding:5px 13px;font-size:.78rem;border-radius:4px;border:1px solid #c62828;cursor:pointer}
+.btn-reset:hover{background:#5a1515}
+</style>
 </head>
 <body>
 <div class="container">
+
 <div class="header">
-<h1>SCCM Application Deployment Tool</h1>
-<p>Automated deployment with real-time monitoring</p>
+  <h1>SCCM Application Deployment Tool</h1>
+  <p>Automated deployment with real-time monitoring</p>
 </div>
 
 <div class="tabs">
-
-
-
+  <button class="tab-btn active" onclick="switchTab('config')">&#9881; Config</button>
+  <button class="tab-btn"        onclick="switchTab('options')">&#9965; Options</button>
+  <button class="tab-btn"        onclick="switchTab('log')"    >&#128196; Log</button>
 </div>
 
-<!-- ═══════════════════════════════════════ CONFIG TAB ═══════════════════════════════════════ -->
+<!-- ═══════════════════════ CONFIG TAB ═══════════════════════ -->
 <div id="config" class="tab-content active">
 <h2>Application Configuration</h2>
 
 <div id="validationSummary" class="validation-summary">
-<h3>Please fix the following errors:</h3>
-<ul id="validationErrors"></ul>
+  <h3>Please fix the following errors:</h3>
+  <ul id="validationErrors"></ul>
 </div>
 
 <div class="form-row">
+  <div class="form-group">
+    <label class="required" for="appName">Application Name</label>
+    <input type="text" id="appName" placeholder="e.g. Adobe Acrobat Reader DC 24.0">
+    <div class="error-message" id="appName-error">Application Name is required</div>
+    <div class="help-text">Unique name for the application in SCCM</div>
+  </div>
+  <div class="form-group">
+    <label for="deploymentTypeName">Deployment Type Name</label>
+    <input type="text" id="deploymentTypeName" placeholder="Defaults to &lt;AppName&gt;_Install">
+  </div>
+</div>
+
 <div class="form-group">
-<label class="required">Application Name</label>
-
-<div class="error-message" id="appName-error">Application Name is required</div>
-<div class="help-text">Unique name for the application in SCCM</div>
-</div>
-<div class="form-group">
-<label>Deployment Type Name</label>
-
-</div>
+  <label for="description">Description</label>
+  <textarea id="description" rows="2" placeholder="Optional application description"></textarea>
 </div>
 
-<div class="form-group">
-<label>Description</label>
-
-</div>
-
-<fieldset class="fieldset">
+<fieldset>
 <legend>Content Settings</legend>
 <div class="form-group">
-<label class="required">Content Location (UNC Path)</label>
-
-<div class="error-message" id="contentLocation-error">Content Location is required and must be a UNC path (\\server\share\folder)</div>
-<div class="help-text">Network path to application source files</div>
+  <label class="required" for="contentLocation">Content Location (UNC Path)</label>
+  <input type="text" id="contentLocation" placeholder="\\server\share\AppName\1.0">
+  <div class="error-message" id="contentLocation-error">Content Location is required and must be a UNC path (\\server\share\folder)</div>
+  <div class="help-text">Network path to application source files</div>
 </div>
 <div class="form-row">
-<div class="form-group">
-<label class="required">Install Command</label>
-
-<div class="error-message" id="installCmd-error">Install Command is required</div>
+  <div class="form-group">
+    <label class="required" for="installCmd">Install Command</label>
+    <input type="text" id="installCmd" placeholder="setup.exe /S  or  install.msi">
+    <div class="error-message" id="installCmd-error">Install Command is required</div>
+  </div>
+  <div class="form-group">
+    <label for="uninstallCmd">Uninstall Command</label>
+    <input type="text" id="uninstallCmd" placeholder="uninstall.exe /S  (optional)">
+  </div>
 </div>
-<div class="form-group">
-<label>Uninstall Command</label>
-
-</div>
-</div>
-<div class="form-group">
-<label>Maximum Runtime (minutes)</label>
-
+<div class="form-group" style="max-width:220px">
+  <label for="maxRuntime">Maximum Runtime (minutes)</label>
+  <input type="number" id="maxRuntime" value="60" min="1" max="720">
 </div>
 </fieldset>
 
-<fieldset class="fieldset">
+<fieldset>
 <legend>Collections &amp; Distribution</legend>
 <div class="form-group">
-<label class="required">Limiting Collection</label>
-
-<div class="error-message" id="limitingCollection-error">Limiting Collection is required</div>
+  <label class="required" for="limitingCollection">Limiting Collection</label>
+  <input type="text" id="limitingCollection" placeholder="__PACKAGING_ROOT_COLLECTION">
+  <div class="error-message" id="limitingCollection-error">Limiting Collection is required</div>
 </div>
 <div class="form-row">
-<div class="form-group">
-<label>Install Collection</label>
-
+  <div class="form-group">
+    <label for="installCollection">Install Collection</label>
+    <input type="text" id="installCollection" placeholder="Defaults to &lt;AppName&gt;">
+  </div>
+  <div class="form-group">
+    <label for="uninstallCollection">Uninstall Collection</label>
+    <input type="text" id="uninstallCollection" placeholder="Defaults to &lt;AppName&gt;_Uninstall">
+  </div>
 </div>
 <div class="form-group">
-<label>Uninstall Collection</label>
-
-</div>
-</div>
-<div class="form-group">
-<label>Distribution Point Group</label>
-
-<div class="help-text">Hardcoded — content always distributes to All Datacenter Distribution Points.</div>
+  <label>Distribution Point Group</label>
+  <input type="text" value="All Datacenter Distribution Points" readonly>
+  <div class="help-text">Hardcoded — content always distributes to All Datacenter Distribution Points.</div>
 </div>
 </fieldset>
 
-<fieldset class="fieldset">
+<fieldset>
 <legend>Console Organization</legend>
 <div class="form-row">
-<div class="form-group">
-<label>Application Folder Path</label>
-
-</div>
-<div class="form-group">
-<label>Collection Folder Path</label>
-
-</div>
+  <div class="form-group">
+    <label for="appFolder">Application Folder Path</label>
+    <input type="text" id="appFolder" placeholder="DSK\_STAGING">
+  </div>
+  <div class="form-group">
+    <label for="collectionFolder">Collection Folder Path</label>
+    <input type="text" id="collectionFolder" placeholder="DSK\Application Deployments\_STAGING">
+  </div>
 </div>
 </fieldset>
 
-<fieldset class="fieldset">
+<fieldset>
 <legend>Detection Methods</legend>
 
 <div class="form-group">
-<label>Registry Uninstall Key Name</label>
-
-<div class="help-text">Key name under HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\ (both 64-bit and 32-bit paths are checked)</div>
+  <label for="detRegKeyName">Registry Uninstall Key Name</label>
+  <input type="text" id="detRegKeyName" placeholder="Defaults to Application Name if blank">
+  <div class="help-text">Key name under HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\ (both 64-bit and 32-bit paths are checked)</div>
 </div>
 
-<fieldset class="fieldset">
+<fieldset>
 <legend>Registry Value Detection (optional)</legend>
 <div class="form-row">
-<div class="form-group">
-<label>Value Name</label>
-
-</div>
-<div class="form-group">
-<label>Data Type</label>
-
-</div>
+  <div class="form-group">
+    <label for="detRegValueName">Value Name</label>
+    <input type="text" id="detRegValueName" placeholder="e.g. DisplayVersion">
+  </div>
+  <div class="form-group">
+    <label for="detRegDataType">Data Type</label>
+    <select id="detRegDataType">
+      <option value="">— select —</option>
+      <option value="String">String</option>
+      <option value="Integer">Integer</option>
+      <option value="Boolean">Boolean</option>
+      <option value="DateTime">DateTime</option>
+      <option value="FloatingPoint">FloatingPoint</option>
+      <option value="Version">Version</option>
+    </select>
+  </div>
 </div>
 <div class="form-row">
-<div class="form-group">
-<label>Operator</label>
-
-</div>
-<div class="form-group">
-<label>Expected Value</label>
-
-</div>
+  <div class="form-group">
+    <label for="detRegOperator">Operator</label>
+    <select id="detRegOperator">
+      <option value="">— select —</option>
+      <option value="IsEquals">IsEquals</option>
+      <option value="NotEquals">NotEquals</option>
+      <option value="GreaterThan">GreaterThan</option>
+      <option value="GreaterEquals">GreaterEquals</option>
+      <option value="LessThan">LessThan</option>
+      <option value="LessEquals">LessEquals</option>
+    </select>
+  </div>
+  <div class="form-group">
+    <label for="detRegExpected">Expected Value</label>
+    <input type="text" id="detRegExpected" placeholder="e.g. 24.0.0">
+  </div>
 </div>
 <div class="help-text">Leave blank to check key existence only. All four fields are required for a value comparison.</div>
 </fieldset>
 
-<fieldset class="fieldset">
+<fieldset>
 <legend>File Detection (optional)</legend>
 <div class="form-row">
-<div class="form-group">
-<label>File Path</label>
-
+  <div class="form-group">
+    <label for="detFilePath">File Path</label>
+    <input type="text" id="detFilePath" placeholder="C:\Program Files\App">
+  </div>
+  <div class="form-group">
+    <label for="detFileName">File Name</label>
+    <input type="text" id="detFileName" placeholder="app.exe">
+  </div>
 </div>
-<div class="form-group">
-<label>File Name</label>
-
-</div>
-</div>
-<div class="form-group">
-<label>Minimum Version <span style="font-weight:normal;color:#666">(leave blank to check existence only)</span></label>
-
+<div class="form-group" style="max-width:280px">
+  <label for="detFileVersion">Minimum Version <span style="font-weight:400;color:#555">(leave blank to check existence only)</span></label>
+  <input type="text" id="detFileVersion" placeholder="e.g. 24.0.0.0">
 </div>
 </fieldset>
 
-<fieldset class="fieldset">
+<fieldset>
 <legend>Directory Detection (optional)</legend>
 <div class="form-row">
-<div class="form-group">
-<label>Directory Path</label>
-
-</div>
-<div class="form-group">
-<label>Directory Name</label>
-
-</div>
+  <div class="form-group">
+    <label for="detDirPath">Directory Path</label>
+    <input type="text" id="detDirPath" placeholder="C:\Program Files">
+  </div>
+  <div class="form-group">
+    <label for="detDirName">Directory Name</label>
+    <input type="text" id="detDirName" placeholder="AppName">
+  </div>
 </div>
 </fieldset>
 
-<fieldset class="fieldset">
+<fieldset>
 <legend>Windows Installer Detection (optional)</legend>
 <div class="form-row">
-<div class="form-group">
-<label>Product Code</label>
-
+  <div class="form-group">
+    <label for="detMsiCode">Product Code</label>
+    <input type="text" id="detMsiCode" placeholder="{xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx}">
+  </div>
+  <div class="form-group">
+    <label for="detMsiVersionOp">Version Operator</label>
+    <select id="detMsiVersionOp">
+      <option value="Exists">Exists</option>
+      <option value="IsEquals">IsEquals</option>
+      <option value="NotEquals">NotEquals</option>
+      <option value="GreaterThan">GreaterThan</option>
+      <option value="GreaterEquals">GreaterEquals</option>
+      <option value="LessThan">LessThan</option>
+      <option value="LessEquals">LessEquals</option>
+    </select>
+  </div>
 </div>
-<div class="form-group">
-<label>Version Operator</label>
-
-</div>
-</div>
-<div class="form-group">
-<label>Product Version <span style="font-weight:normal;color:#666">(required when operator is not Exists)</span></label>
-
+<div class="form-group" style="max-width:280px">
+  <label for="detMsiVersion">Product Version <span style="font-weight:400;color:#555">(required when operator is not Exists)</span></label>
+  <input type="text" id="detMsiVersion" placeholder="e.g. 24.0.0.0">
 </div>
 <div class="help-text">Uses the Windows Installer (MSI) product registration database — the most reliable detection for MSI-based applications. Leave Product Code blank to skip.</div>
 </fieldset>
-</fieldset>
-</div>
 
-<!-- ═══════════════════════════════════════ OPTIONS TAB ══════════════════════════════════════ -->
+</fieldset>
+</div><!-- /config -->
+
+<!-- ═══════════════════════ OPTIONS TAB ═══════════════════════ -->
 <div id="options" class="tab-content">
 <h2>Deployment Options</h2>
 
-<div class="form-group checkbox-group">
-
-<label for="enableLogging">Enable file logging</label>
+<fieldset>
+<legend>Logging</legend>
+<div class="checkbox-group">
+  <input type="checkbox" id="enableLogging" onchange="document.getElementById('logFilePath').disabled=!this.checked">
+  <label for="enableLogging">Enable file logging</label>
 </div>
 <div class="form-group">
-<label>Log File Path</label>
-
-<div class="help-text">Full path to log file. Leave empty to skip file logging.</div>
+  <label for="logFilePath">Log File Path</label>
+  <input type="text" id="logFilePath" placeholder="C:\Logs\SCCMDeploy.log" disabled>
+  <div class="help-text">Full path to log file. Leave empty to skip file logging.</div>
 </div>
-<div class="form-group checkbox-group">
+</fieldset>
 
-<label for="forceMode">Force mode (skip confirmation prompts)</label>
+<fieldset>
+<legend>Behaviour</legend>
+<div class="checkbox-group">
+  <input type="checkbox" id="forceMode">
+  <label for="forceMode">Force mode (skip confirmation prompts)</label>
 </div>
-<div class="form-group checkbox-group">
+<div class="checkbox-group">
+  <input type="checkbox" id="noRollback">
+  <label for="noRollback">Disable automatic rollback on failure</label>
+</div>
+<div class="checkbox-group">
+  <input type="checkbox" id="verboseLogging">
+  <label for="verboseLogging">Enable verbose logging (recommended during testing)</label>
+</div>
+<div class="form-group" style="max-width:220px;margin-top:10px">
+  <label for="collectionTimeout">Collection Creation Timeout (minutes)</label>
+  <input type="number" id="collectionTimeout" value="5" min="1" max="30">
+</div>
+</fieldset>
 
-<label for="noRollback">Disable automatic rollback on failure</label>
+<fieldset>
+<legend>Site Connection</legend>
+<div class="form-row">
+  <div class="form-group">
+    <label for="siteCode">Site Code</label>
+    <input type="text" id="siteCode" value="CM0" placeholder="CM0">
+  </div>
+  <div class="form-group">
+    <label for="siteServer">Site Server FQDN</label>
+    <input type="text" id="siteServer" value="WAZEU2PRDDE051.corp.internal.citizensbank.com">
+  </div>
 </div>
-<div class="form-group checkbox-group">
+</fieldset>
+</div><!-- /options -->
 
-<label for="verboseLogging">Enable verbose logging (recommended during testing)</label>
-</div>
-<div class="form-group">
-<label>Collection Creation Timeout (minutes)</label>
-
-</div>
-</div>
-
-<!-- ════════════════════════════════════════ LOG TAB ════════════════════════════════════════ -->
+<!-- ═══════════════════════ LOG TAB ═══════════════════════ -->
 <div id="log" class="tab-content">
-<h2>Execution Log <span id="statusBadge" class="status-badge status-ready">Ready</span></h2>
+<h2>Execution Log <span id="statusBadge" class="status-badge badge-ready">Ready</span></h2>
 
 <div class="log-controls">
-
-
-
-
+  <button class="btn-sm" onclick="clearLog()">Clear</button>
+  <button class="btn-sm active" id="btnAutoScroll" onclick="toggleAutoScroll()">Auto-scroll: ON</button>
+  <button class="btn-reset" onclick="resetState()">Reset State</button>
 </div>
 
-<div id="logContainer" class="log-container">Ready to deploy. Configure your settings and click "Deploy" or "WhatIf" to begin.</div>
-</div>
+<div id="logContainer" class="log-container">Ready to deploy. Configure your settings and click Deploy or WhatIf to begin.</div>
+</div><!-- /log -->
 
 <div class="actions">
-
-
+  <button id="btnDeploy" class="btn btn-deploy" onclick="deploy(false)">&#9658; Deploy</button>
+  <button id="btnWhatIf" class="btn btn-whatif" onclick="deploy(true)">&#128270; WhatIf</button>
 </div>
-</div>
 
+</div><!-- /container -->
+<script>
+var _deploying=false,_autoScroll=true,_lastCount=0;
 
+function switchTab(name){
+  document.querySelectorAll('.tab-btn').forEach(function(b,i){
+    b.classList.toggle('active',['config','options','log'][i]===name);
+  });
+  document.querySelectorAll('.tab-content').forEach(function(c){
+    c.classList.toggle('active',c.id===name);
+  });
+}
+
+function v(id){var e=document.getElementById(id);return e?e.value.trim():'';}
+function cb(id){var e=document.getElementById(id);return e?e.checked:false;}
+function n(id,def){var x=parseInt(v(id));return isNaN(x)?def:x;}
+
+function validate(){
+  var errors=[];
+  var req=[
+    {id:'appName',       label:'Application Name'},
+    {id:'contentLocation',label:'Content Location'},
+    {id:'installCmd',    label:'Install Command'},
+    {id:'limitingCollection',label:'Limiting Collection'}
+  ];
+  req.forEach(function(f){
+    var el=document.getElementById(f.id);
+    var grp=el.closest('.form-group');
+    if(!el.value.trim()){errors.push(f.label+' is required');grp.classList.add('has-error');}
+    else grp.classList.remove('has-error');
+  });
+  var cl=document.getElementById('contentLocation');
+  if(cl.value.trim()&&!cl.value.trim().startsWith('\\\\'))
+    {errors.push('Content Location must be a UNC path (\\\\server\\share)');cl.closest('.form-group').classList.add('has-error');}
+  var vs=document.getElementById('validationSummary');
+  var vl=document.getElementById('validationErrors');
+  if(errors.length){vl.innerHTML=errors.map(function(e){return'<li>'+e+'</li>';}).join('');vs.classList.add('visible');return false;}
+  vs.classList.remove('visible');return true;
+}
+
+function buildConfig(whatIf){
+  return{
+    AppName:v('appName'),DeploymentTypeName:v('deploymentTypeName'),Description:v('description'),
+    SiteCode:v('siteCode'),SiteServerFqdn:v('siteServer'),
+    ContentLocation:v('contentLocation'),InstallCommand:v('installCmd'),UninstallCommand:v('uninstallCmd'),
+    MaxRuntimeMins:n('maxRuntime',60),
+    LimitingCollectionName:v('limitingCollection'),InstallCollectionName:v('installCollection'),UninstallCollectionName:v('uninstallCollection'),
+    ApplicationFolder:v('appFolder'),CollectionFolder:v('collectionFolder'),
+    DetectionRegKeyName:v('detRegKeyName'),
+    DetectionRegValueName:v('detRegValueName'),DetectionRegDataType:v('detRegDataType'),
+    DetectionRegOperator:v('detRegOperator'),DetectionRegExpectedValue:v('detRegExpected'),
+    DetectionFilePath:v('detFilePath'),DetectionFileName:v('detFileName'),DetectionFileVersion:v('detFileVersion'),
+    DetectionDirPath:v('detDirPath'),DetectionDirName:v('detDirName'),
+    DetectionMsiProductCode:v('detMsiCode'),DetectionMsiVersionOp:v('detMsiVersionOp'),DetectionMsiVersion:v('detMsiVersion'),
+    LogFilePath:cb('enableLogging')?v('logFilePath'):'',
+    Force:cb('forceMode'),NoRollback:cb('noRollback'),VerboseLogging:cb('verboseLogging'),
+    CollectionCreationTimeoutMinutes:n('collectionTimeout',5),
+    WhatIf:whatIf
+  };
+}
+
+function deploy(whatIf){
+  if(!validate())return;
+  if(_deploying)return;
+  switchTab('log');
+  setDeploying(true);
+  fetch('/api/deploy',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(buildConfig(whatIf))})
+    .then(function(r){return r.json();})
+    .then(function(j){if(!j.success){appendLine('Failed to start: '+(j.error||'unknown error'),'fail');setDeploying(false);}})
+    .catch(function(e){appendLine('Network error: '+e,'fail');setDeploying(false);});
+}
+
+function setDeploying(dep){
+  _deploying=dep;
+  var b=document.getElementById('statusBadge');
+  if(dep){b.textContent='Running';b.className='status-badge badge-running';}
+  else{b.textContent='Ready';b.className='status-badge badge-ready';}
+  document.getElementById('btnDeploy').disabled=dep;
+  document.getElementById('btnWhatIf').disabled=dep;
+}
+
+function appendLine(text,cls){
+  var c=document.getElementById('logContainer');
+  var sp=document.createElement('span');
+  sp.className='log-'+(cls||'info');
+  sp.textContent=text;
+  c.appendChild(sp);c.appendChild(document.createTextNode('\n'));
+  if(_autoScroll)c.scrollTop=c.scrollHeight;
+}
+
+function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+
+function renderLogs(logs){
+  var c=document.getElementById('logContainer');
+  var html='';
+  logs.forEach(function(line){
+    if(!line){html+='<br>';return;}
+    var cls='log-info';
+    if(line.indexOf('[ OK ]')>=0)cls='log-ok';
+    else if(line.indexOf('[FAIL]')>=0)cls='log-fail';
+    else if(line.indexOf('[WARN]')>=0)cls='log-warn';
+    else if(line.indexOf('[STEP]')>=0)cls='log-step';
+    html+='<span class="'+cls+'">'+esc(line)+'</span>\n';
+  });
+  c.innerHTML=html;
+  if(_autoScroll)c.scrollTop=c.scrollHeight;
+}
+
+function pollLogs(){
+  fetch('/api/logs')
+    .then(function(r){return r.json();})
+    .then(function(j){
+      if(j.logs&&j.logs.length!==_lastCount){_lastCount=j.logs.length;renderLogs(j.logs);}
+      if(_deploying&&!j.isDeploying){
+        setDeploying(false);
+        var b=document.getElementById('statusBadge');
+        var logs=j.logs||[];
+        var last=logs.filter(function(l){return l;}).pop()||'';
+        if(last.indexOf('[FAIL]')>=0){b.textContent='Failed';b.className='status-badge badge-error';}
+        else{b.textContent='Done';b.className='status-badge badge-done';}
+      }else if(!_deploying&&j.isDeploying){setDeploying(true);}
+    })
+    .catch(function(){});
+}
+
+function clearLog(){
+  fetch('/api/clear-log',{method:'POST'}).then(function(){_lastCount=0;}).catch(function(){});
+}
+
+function resetState(){
+  if(!confirm('Reset deployment state? Use this only if the server is stuck after an interrupted run.'))return;
+  fetch('/api/reset',{method:'POST'}).then(function(){setDeploying(false);_lastCount=0;}).catch(function(){});
+}
+
+function toggleAutoScroll(){
+  _autoScroll=!_autoScroll;
+  var b=document.getElementById('btnAutoScroll');
+  b.textContent='Auto-scroll: '+(_autoScroll?'ON':'OFF');
+  b.classList.toggle('active',_autoScroll);
+}
+
+setInterval(pollLogs,1000);
+</script>
 </body>
 </html>
 '@
