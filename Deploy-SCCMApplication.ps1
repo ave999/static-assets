@@ -997,32 +997,27 @@ function Invoke-SCCMDeployment {
                             -ErrorAction Stop | Out-Null
                         Write-Log "MSI deployment type created (detection via ProductCode)" -Level 'Success'
                     } else {
-                        # Two-step detection setup to work around CMPSNoMask = True:
-                        # 1. Add-CMScriptDeploymentType establishes the deployment type.
-                        #    Detection clauses are NOT passed here — the SDK marks clause
-                        #    objects consumed after the first cmdlet call (CMPSNoMask = True),
-                        #    so passing them here would prevent Set-CMScriptDeploymentType
-                        #    from accepting the same objects, and would also cause duplicates
-                        #    because Set-CMScriptDeploymentType *adds* to existing clauses.
-                        # 2. Set-CMScriptDeploymentType with a freshly-built clause set
-                        #    applies (and solely owns) all detection clauses.
+                        # Add-CMScriptDeploymentType both creates the deployment type AND
+                        # persists the detection clauses in a single call. Passing
+                        # AddDetectionClause here is required to switch the DT into
+                        # clause-based detection mode (as opposed to Windows Installer mode).
+                        # The clauses are built fresh via $BuildDetectionClauses so that the
+                        # CMPSNoMask flag on each clause object has not yet been set.
+                        # Do NOT follow this with a Set-CMScriptDeploymentType -AddDetectionClause
+                        # call — that would append a second copy of every clause, producing
+                        # duplicates.
                         $scriptDtParams = @{
-                            ContentLocation  = $ContentLocation
-                            InstallCommand   = $InstallCommand
-                            ContentFallback  = $true
+                            ContentLocation   = $ContentLocation
+                            InstallCommand    = $InstallCommand
+                            ContentFallback   = $true
                             EnableBranchCache = $true
+                            AddDetectionClause = (& $BuildDetectionClauses)
                         }
                         if (-not [string]::IsNullOrWhiteSpace($UninstallCommand)) {
                             $scriptDtParams['UninstallCommand'] = $UninstallCommand
                         }
                         Add-CMScriptDeploymentType @commonParams @scriptDtParams -ErrorAction Stop | Out-Null
-                        Write-Log "Script/EXE deployment type created"
-                        Set-CMScriptDeploymentType `
-                            -ApplicationName   $AppName `
-                            -DeploymentTypeName $DeploymentTypeName `
-                            -AddDetectionClause (& $BuildDetectionClauses) `
-                            -ErrorAction Stop | Out-Null
-                        Write-Log "Detection clauses applied: $($detectionClauses.Count) clause(s)" -Level 'Success'
+                        Write-Log "Script/EXE deployment type created with $($detectionClauses.Count) detection clause(s)." -Level 'Success'
                     }
                 } else {
                     if ($isMsi) {
