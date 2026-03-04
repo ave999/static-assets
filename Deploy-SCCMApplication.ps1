@@ -1144,16 +1144,17 @@ function Invoke-SCCMDeployment {
             }
 
             #--- Create install deployment ---
-            Invoke-Step -Name "Deploy '$AppName' to '$InstallCollectionName' (Install / Required)" -Script {
+            $installCollectionFull = "$InstallCollectionName-UAT"
+            Invoke-Step -Name "Deploy '$AppName' to '$installCollectionFull' (Install / Required)" -Script {
                 $retries = 0; $maxRetries = 10; $collection = $null
                 do {
-                    $collection = Get-CMDeviceCollection -Name $InstallCollectionName -ErrorAction SilentlyContinue
+                    $collection = Get-CMDeviceCollection -Name $installCollectionFull -ErrorAction SilentlyContinue
                     if ($collection) { break }
                     if ($retries -gt 0) { Write-Log "Waiting for collection replication... (attempt $retries/$maxRetries)"; Start-Sleep -Seconds 5 }
                     $retries++
                 } while ($retries -le $maxRetries)
 
-                if (-not $collection -and -not $WhatIf) { throw "Collection '$InstallCollectionName' not found after $maxRetries retries." }
+                if (-not $collection -and -not $WhatIf) { throw "Collection '$installCollectionFull' not found after $maxRetries retries." }
 
                 if (-not $WhatIf) {
                     $deployment = New-CMApplicationDeployment `
@@ -1166,7 +1167,7 @@ function Invoke-SCCMDeployment {
                     $createdObjects.Deployments += $deployment.DeploymentID
                     Write-Log "Deployment created (ID: $($deployment.DeploymentID))" -Level 'Success'
                 } else {
-                    Write-Log "[WHATIF] Would create Install/Required deployment to '$InstallCollectionName'"
+                    Write-Log "[WHATIF] Would create Install/Required deployment to '$installCollectionFull'"
                 }
             }
 
