@@ -52,13 +52,13 @@ $HttpServerBlock = {
 body{font-family:'Segoe UI',system-ui,sans-serif;background:#12121e;color:#ddd;min-height:100vh}
 .container{max-width:1080px;margin:0 auto;padding:20px}
 .header{text-align:center;padding:24px 0 16px}
-.header h1{color:#4fc3f7;font-size:1.75rem;font-weight:600}
+.header h1{color:#5ab4e0;font-size:1.75rem;font-weight:600}
 .header p{color:#666;margin-top:6px;font-size:.9rem}
 /* ── Tabs ── */
-.tabs{display:flex;border-bottom:2px solid #2a2a40;margin-bottom:22px}
+.tabs{display:flex;border-bottom:2px solid #1a3a56;margin-bottom:22px}
 .tab-btn{padding:10px 26px;cursor:pointer;background:none;border:none;color:#777;font-size:.9rem;border-bottom:3px solid transparent;margin-bottom:-2px;transition:color .15s,border-color .15s}
 .tab-btn:hover{color:#aaa}
-.tab-btn.active{color:#4fc3f7;border-bottom-color:#4fc3f7}
+.tab-btn.active{color:#5ab4e0;border-bottom-color:#004E89}
 .tab-content{display:none}.tab-content.active{display:block}
 /* ── Forms ── */
 h2{font-size:1.1rem;font-weight:600;color:#bbb;margin-bottom:18px}
@@ -70,7 +70,7 @@ label.required::after{content:' *';color:#e57373}
 input[type=text],input[type=number],textarea,select{
   width:100%;padding:8px 11px;background:#1c1c2e;border:1px solid #333;
   border-radius:4px;color:#ddd;font-size:.875rem;outline:none;transition:border-color .15s}
-input[type=text]:focus,input[type=number]:focus,textarea:focus,select:focus{border-color:#4fc3f7}
+input[type=text]:focus,input[type=number]:focus,textarea:focus,select:focus{border-color:#5ab4e0}
 input[readonly]{background:#161622;color:#666;cursor:default}
 textarea{resize:vertical;min-height:58px;font-family:inherit}
 select option{background:#1c1c2e}
@@ -79,15 +79,15 @@ select option{background:#1c1c2e}
 .has-error input,.has-error select,.has-error textarea{border-color:#e57373 !important}
 .has-error .error-message{display:block}
 /* ── Fieldset ── */
-fieldset{border:1px solid #252538;border-radius:6px;padding:14px 16px;margin-bottom:14px}
-legend{padding:0 8px;color:#4fc3f7;font-size:.8rem;font-weight:600;letter-spacing:.03em}
+fieldset{border:1px solid #1a3a56;border-radius:6px;padding:14px 16px;margin-bottom:14px}
+legend{padding:0 8px;color:#5ab4e0;font-size:.8rem;font-weight:600;letter-spacing:.03em}
 /* ── Detection sub-sections ── */
-.det-section{border-left:2px solid #2a2a40;padding:10px 14px;margin-bottom:14px}
+.det-section{border-left:2px solid #004E89;padding:10px 14px;margin-bottom:14px}
 .det-section:last-child{margin-bottom:0}
-.det-title{font-size:.75rem;font-weight:600;color:#4fc3f7;letter-spacing:.05em;text-transform:uppercase;margin-bottom:12px}
+.det-title{font-size:.75rem;font-weight:600;color:#5ab4e0;letter-spacing:.05em;text-transform:uppercase;margin-bottom:12px}
 /* ── Checkboxes ── */
 .checkbox-group{display:flex;align-items:center;gap:10px;margin-bottom:12px}
-.checkbox-group input[type=checkbox]{width:15px;height:15px;accent-color:#4fc3f7;cursor:pointer;flex-shrink:0}
+.checkbox-group input[type=checkbox]{width:15px;height:15px;accent-color:#5ab4e0;cursor:pointer;flex-shrink:0}
 .checkbox-group label{margin:0;color:#bbb;font-size:.875rem;font-weight:400;cursor:pointer}
 /* ── Validation summary ── */
 .validation-summary{background:#2a1515;border:1px solid #c62828;border-radius:6px;padding:12px 16px;margin-bottom:16px;display:none}
@@ -96,25 +96,25 @@ legend{padding:0 8px;color:#4fc3f7;font-size:.8rem;font-weight:600;letter-spacin
 .validation-summary ul{padding-left:18px}
 .validation-summary li{color:#ef9a9a;font-size:.82rem;line-height:1.6}
 /* ── Log ── */
-.log-container{background:#0a0a14;border:1px solid #252538;border-radius:6px;padding:12px 14px;font-family:'Consolas','Courier New',monospace;font-size:.8rem;height:420px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;color:#bbb}
+.log-container{background:#0a0a14;border:1px solid #1a3a56;border-radius:6px;padding:12px 14px;font-family:'Consolas','Courier New',monospace;font-size:.8rem;height:420px;overflow-y:auto;white-space:pre-wrap;word-break:break-all;color:#bbb}
 .log-controls{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
-.log-ok{color:#66bb6a}.log-fail{color:#ef5350}.log-warn{color:#ffa726}.log-step{color:#4fc3f7}.log-info{color:#bbb}
+.log-ok{color:#66bb6a}.log-fail{color:#ef5350}.log-warn{color:#ffa726}.log-step{color:#5ab4e0}.log-info{color:#bbb}
 /* ── Badge ── */
 .status-badge{display:inline-block;padding:2px 10px;border-radius:10px;font-size:.72rem;font-weight:700;vertical-align:middle;margin-left:8px;text-transform:uppercase;letter-spacing:.05em}
 .badge-ready{background:#1a2e1a;color:#66bb6a}
-.badge-running{background:#0e1e30;color:#4fc3f7}
+.badge-running{background:#012948;color:#5ab4e0}
 .badge-done{background:#1a2e1a;color:#66bb6a}
 .badge-error{background:#2e1010;color:#ef5350}
 /* ── Buttons ── */
-.actions{display:flex;gap:12px;margin-top:22px;padding-top:18px;border-top:1px solid #252538;flex-wrap:wrap}
+.actions{display:flex;gap:12px;margin-top:22px;padding-top:18px;border-top:1px solid #1a3a56;flex-wrap:wrap}
 .btn{padding:9px 22px;border-radius:5px;border:none;cursor:pointer;font-size:.875rem;font-weight:600;transition:filter .15s,opacity .15s}
 .btn:hover:not(:disabled){filter:brightness(1.12)}
 .btn:disabled{opacity:.38;cursor:not-allowed}
-.btn-deploy{background:#1565c0;color:#fff}
+.btn-deploy{background:#004E89;color:#fff}
 .btn-whatif{background:#37474f;color:#fff}
 .btn-sm{padding:5px 13px;font-size:.78rem;border-radius:4px;border:1px solid #333;background:#1c1c2e;color:#aaa;cursor:pointer;transition:border-color .15s,color .15s}
-.btn-sm:hover{border-color:#4fc3f7;color:#4fc3f7}
-.btn-sm.active{border-color:#4fc3f7;color:#4fc3f7;background:#0e1e30}
+.btn-sm:hover{border-color:#5ab4e0;color:#5ab4e0}
+.btn-sm.active{border-color:#5ab4e0;color:#5ab4e0;background:#012948}
 .btn-reset{background:#4a1010;color:#ef9a9a;padding:5px 13px;font-size:.78rem;border-radius:4px;border:1px solid #c62828;cursor:pointer}
 .btn-reset:hover{background:#5a1515}
 </style>
