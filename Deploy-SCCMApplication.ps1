@@ -81,6 +81,10 @@ select option{background:#1c1c2e}
 /* ── Fieldset ── */
 fieldset{border:1px solid #252538;border-radius:6px;padding:14px 16px;margin-bottom:14px}
 legend{padding:0 8px;color:#4fc3f7;font-size:.8rem;font-weight:600;letter-spacing:.03em}
+/* ── Detection sub-sections ── */
+.det-section{border-left:2px solid #2a2a40;padding:10px 14px;margin-bottom:14px}
+.det-section:last-child{margin-bottom:0}
+.det-title{font-size:.75rem;font-weight:600;color:#4fc3f7;letter-spacing:.05em;text-transform:uppercase;margin-bottom:12px}
 /* ── Checkboxes ── */
 .checkbox-group{display:flex;align-items:center;gap:10px;margin-bottom:12px}
 .checkbox-group input[type=checkbox]{width:15px;height:15px;accent-color:#4fc3f7;cursor:pointer;flex-shrink:0}
@@ -225,11 +229,11 @@ legend{padding:0 8px;color:#4fc3f7;font-size:.8rem;font-weight:600;letter-spacin
 <div class="form-group">
   <label for="detRegKeyName">Registry Uninstall Key Name</label>
   <input type="text" id="detRegKeyName" placeholder="Defaults to Application Name if blank">
-  <div class="help-text">Key name under HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\ (both 64-bit and 32-bit paths are checked)</div>
+  <div class="help-text">Key name under HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\ (64-bit hive)</div>
 </div>
 
-<fieldset>
-<legend>Registry Value Detection (optional)</legend>
+<div class="det-section">
+<div class="det-title">Registry Value Detection (optional)</div>
 <div class="form-row">
   <div class="form-group">
     <label for="detRegValueName">Value Name</label>
@@ -267,10 +271,10 @@ legend{padding:0 8px;color:#4fc3f7;font-size:.8rem;font-weight:600;letter-spacin
   </div>
 </div>
 <div class="help-text">Leave blank to check key existence only. All four fields are required for a value comparison.</div>
-</fieldset>
+</div>
 
-<fieldset>
-<legend>File Detection (optional)</legend>
+<div class="det-section">
+<div class="det-title">File Detection (optional)</div>
 <div class="form-row">
   <div class="form-group">
     <label for="detFilePath">File Path</label>
@@ -285,10 +289,10 @@ legend{padding:0 8px;color:#4fc3f7;font-size:.8rem;font-weight:600;letter-spacin
   <label for="detFileVersion">Minimum Version <span style="font-weight:400;color:#555">(leave blank to check existence only)</span></label>
   <input type="text" id="detFileVersion" placeholder="e.g. 24.0.0.0">
 </div>
-</fieldset>
+</div>
 
-<fieldset>
-<legend>Directory Detection (optional)</legend>
+<div class="det-section">
+<div class="det-title">Directory Detection (optional)</div>
 <div class="form-row">
   <div class="form-group">
     <label for="detDirPath">Directory Path</label>
@@ -299,10 +303,10 @@ legend{padding:0 8px;color:#4fc3f7;font-size:.8rem;font-weight:600;letter-spacin
     <input type="text" id="detDirName" placeholder="AppName">
   </div>
 </div>
-</fieldset>
+</div>
 
-<fieldset>
-<legend>Windows Installer Detection (optional)</legend>
+<div class="det-section">
+<div class="det-title">Windows Installer Detection (optional)</div>
 <div class="form-row">
   <div class="form-group">
     <label for="detMsiCode">Product Code</label>
@@ -325,8 +329,8 @@ legend{padding:0 8px;color:#4fc3f7;font-size:.8rem;font-weight:600;letter-spacin
   <label for="detMsiVersion">Product Version <span style="font-weight:400;color:#555">(required when operator is not Exists)</span></label>
   <input type="text" id="detMsiVersion" placeholder="e.g. 24.0.0.0">
 </div>
-<div class="help-text">Uses the Windows Installer (MSI) product registration database — the most reliable detection for MSI-based applications. Leave Product Code blank to skip.</div>
-</fieldset>
+<div class="help-text">Uses the Windows Installer (MSI) product registration database. Leave Product Code blank to skip.</div>
+</div>
 
 </fieldset>
 </div><!-- /config -->
