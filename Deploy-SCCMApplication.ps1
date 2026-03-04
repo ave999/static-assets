@@ -110,8 +110,8 @@ legend{padding:0 8px;color:#5ab4e0;font-size:.8rem;font-weight:600;letter-spacin
 .btn{padding:9px 22px;border-radius:5px;border:none;cursor:pointer;font-size:.875rem;font-weight:600;transition:filter .15s,opacity .15s}
 .btn:hover:not(:disabled){filter:brightness(1.12)}
 .btn:disabled{opacity:.38;cursor:not-allowed}
-.btn-deploy{background:#004E89;color:#fff}
-.btn-whatif{background:#37474f;color:#fff}
+.btn-deploy{background:#2e7d32;color:#fff}
+.btn-whatif{background:#1565c0;color:#fff}
 .btn-sm{padding:5px 13px;font-size:.78rem;border-radius:4px;border:1px solid #333;background:#1c1c2e;color:#aaa;cursor:pointer;transition:border-color .15s,color .15s}
 .btn-sm:hover{border-color:#5ab4e0;color:#5ab4e0}
 .btn-sm.active{border-color:#5ab4e0;color:#5ab4e0;background:#012948}
