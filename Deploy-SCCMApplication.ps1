@@ -858,7 +858,12 @@ function Invoke-SCCMDeployment {
                         Write-Log "[WHATIF] Would remove $($existingDeployments.Count) existing deployment(s)"
                     }
                 }
-                $existing = Get-CMApplication -Name $AppName -Fast -ErrorAction SilentlyContinue
+                $existing = $null
+                try {
+                    $existing = Get-CMApplication -Name $AppName -Fast -ErrorAction SilentlyContinue
+                } catch {
+                    Write-Log "Could not query existing application (non-fatal): $_" -Level 'Warning'
+                }
                 if ($existing) {
                     Write-Log "Found existing application '$AppName'"
                     if (-not $WhatIf) {
