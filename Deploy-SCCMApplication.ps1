@@ -882,7 +882,22 @@ function Invoke-SCCMDeployment {
             #--- Create application ---
             Invoke-Step -Name "Create application '$AppName'" -Script {
                 if (-not $WhatIf) {
-                    New-CMApplication -Name $AppName -Description $Description -ErrorAction Stop | Out-Null
+                    try {
+                        New-CMApplication -Name $AppName -Description $Description -ErrorAction Stop | Out-Null
+                    } catch [System.ArgumentNullException] {
+                        # Same CM SDK bug as Get-CMApplication above: the cmdlet may throw
+                        # ArgumentNullException while processing its return object even after
+                        # successfully writing to the SMS Provider. Verify via WMI directly
+                        # (bypassing the module) before deciding to fail.
+                        $nameEsc = $AppName -replace "'", "''"
+                        $wmiApp  = Get-WmiObject -Namespace "root\SMS\Site_$SiteCode" `
+                            -Class SMS_Application `
+                            -Filter "LocalizedDisplayName='$nameEsc' AND IsLatest=1" `
+                            -ComputerName $SiteServerFqdn `
+                            -ErrorAction SilentlyContinue
+                        if (-not $wmiApp) { throw }
+                        Write-Log "New-CMApplication threw ArgumentNullException but application was created in SMS Provider — continuing." -Level 'Warning'
+                    }
                     $createdObjects.Application = $AppName
                 } else {
                     Write-Log "[WHATIF] Would create application '$AppName'"
