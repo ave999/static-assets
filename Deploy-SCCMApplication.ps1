@@ -925,17 +925,9 @@ function Invoke-SCCMDeployment {
                         -KeyName "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$DetectionRegKeyName" `
                         -ValueName $DetectionRegValueName -PropertyType $DetectionRegDataType `
                         -ExpressionOperator $DetectionRegOperator -Value -ExpectedValue $DetectionRegExpectedValue
-                    $c += New-CMDetectionClauseRegistryKeyValue `
-                        -Hive LocalMachine `
-                        -KeyName "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$DetectionRegKeyName" `
-                        -ValueName $DetectionRegValueName -PropertyType $DetectionRegDataType `
-                        -ExpressionOperator $DetectionRegOperator -Value -ExpectedValue $DetectionRegExpectedValue
                 } else {
                     $c += New-CMDetectionClauseRegistryKey `
                         -Hive LocalMachine -Is64Bit `
-                        -KeyName "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$DetectionRegKeyName"
-                    $c += New-CMDetectionClauseRegistryKey `
-                        -Hive LocalMachine `
                         -KeyName "SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$DetectionRegKeyName"
                 }
                 if (-not [string]::IsNullOrWhiteSpace($DetectionFilePath) -and -not [string]::IsNullOrWhiteSpace($DetectionFileName)) {
