@@ -1167,8 +1167,14 @@ function Invoke-SCCMDeployment {
                 $dpGroupObj = Get-CMDistributionPointGroup -Name $DPGroupName -ErrorAction SilentlyContinue
                 if (-not $dpGroupObj) { throw "Distribution Point Group '$DPGroupName' not found." }
                 if (-not $WhatIf) {
-                    Start-CMContentDistribution -ApplicationName $AppName `
-                        -DistributionPointGroupName $DPGroupName -ErrorAction Stop | Out-Null
+                    try {
+                        Start-CMContentDistribution -ApplicationName $AppName `
+                            -DistributionPointGroupName $DPGroupName -ErrorAction Stop | Out-Null
+                    } catch [System.ArgumentNullException] {
+                        # CM SDK bug: cmdlet throws ArgumentNullException while processing its
+                        # return value even though content distribution was initiated successfully.
+                        Write-Log "Start-CMContentDistribution threw ArgumentNullException (CM SDK bug) — distribution was initiated. Verify in SCCM console." -Level 'Warning'
+                    }
                     Write-Log "Content distribution initiated to $($dpGroupObj.MemberCount) distribution point(s)" -Level 'Success'
                 } else {
                     Write-Log "[WHATIF] Would distribute content to '$DPGroupName'"
