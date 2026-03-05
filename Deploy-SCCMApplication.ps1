@@ -1164,7 +1164,21 @@ function Invoke-SCCMDeployment {
 
             #--- Distribute content ---
             Invoke-Step -Name "Distribute content to DP group '$DPGroupName'" -Script {
-                $dpGroupObj = Get-CMDistributionPointGroup -Name $DPGroupName -ErrorAction SilentlyContinue
+                $dpGroupObj = $null
+                try {
+                    $dpGroupObj = Get-CMDistributionPointGroup -Name $DPGroupName -ErrorAction SilentlyContinue
+                } catch [System.ArgumentNullException] {
+                    # CM SDK bug: verify via WMI that the group exists before proceeding.
+                    $dpNameEsc = $DPGroupName -replace "'", "''"
+                    $dpGroupObj = Get-WmiObject -Namespace "root\SMS\Site_$SiteCode" `
+                        -Class SMS_DistributionPointGroup `
+                        -Filter "Name='$dpNameEsc'" `
+                        -ComputerName $SiteServerFqdn `
+                        -ErrorAction SilentlyContinue
+                    if ($dpGroupObj) {
+                        Write-Log "Get-CMDistributionPointGroup threw ArgumentNullException (CM SDK bug) — group verified via WMI." -Level 'Warning'
+                    }
+                }
                 if (-not $dpGroupObj) { throw "Distribution Point Group '$DPGroupName' not found." }
                 if (-not $WhatIf) {
                     try {
@@ -1175,7 +1189,7 @@ function Invoke-SCCMDeployment {
                         # return value even though content distribution was initiated successfully.
                         Write-Log "Start-CMContentDistribution threw ArgumentNullException (CM SDK bug) — distribution was initiated. Verify in SCCM console." -Level 'Warning'
                     }
-                    Write-Log "Content distribution initiated to $($dpGroupObj.MemberCount) distribution point(s)" -Level 'Success'
+                    Write-Log "Content distribution initiated to DP group '$DPGroupName'" -Level 'Success'
                 } else {
                     Write-Log "[WHATIF] Would distribute content to '$DPGroupName'"
                 }
