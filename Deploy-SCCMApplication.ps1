@@ -11,10 +11,11 @@ $ErrorActionPreference = 'Stop'
 #region Shared State
 
 $SharedState = [hashtable]::Synchronized(@{
-    LogMessages  = [System.Collections.ArrayList]::Synchronized([System.Collections.ArrayList]::new())
-    IsDeploying  = $false
+    LogMessages   = [System.Collections.ArrayList]::Synchronized([System.Collections.ArrayList]::new())
+    IsDeploying   = $false
     DeployRequest = $null
-    StopServer   = $false
+    StopServer    = $false
+    StatusMessage = ''
 })
 
 #endregion
@@ -105,6 +106,7 @@ legend{padding:0 8px;color:#00693E;font-size:.8rem;font-weight:600;letter-spacin
 .badge-running{background:#dbeafe;color:#1e40af}
 .badge-done{background:#d1fae5;color:#065f46}
 .badge-error{background:#fee2e2;color:#991b1b}
+.badge-retry{background:#fef3c7;color:#92400e}
 /* ── Buttons ── */
 .actions{display:flex;gap:12px;margin-top:22px;padding-top:18px;border-top:1px solid #c8dfd3;flex-wrap:wrap}
 .btn{padding:9px 22px;border-radius:5px;border:none;cursor:pointer;font-size:.875rem;font-weight:600;transition:filter .15s,opacity .15s}
@@ -525,7 +527,13 @@ function pollLogs(){
         var last=logs.filter(function(l){return l;}).pop()||'';
         if(last.indexOf('[FAIL]')>=0){b.textContent='Failed';b.className='status-badge badge-error';}
         else{b.textContent='Done';b.className='status-badge badge-done';}
-      }else if(!_deploying&&j.isDeploying){setDeploying(true);}
+      }else if(!_deploying&&j.isDeploying){
+        setDeploying(true);
+      }
+      if(_deploying&&j.statusMessage){
+        var b=document.getElementById('statusBadge');
+        b.textContent=j.statusMessage;b.className='status-badge badge-retry';
+      }
     })
     .catch(function(){});
 }
@@ -575,8 +583,9 @@ setInterval(pollLogs,1000);
                     }
                     '^/api/logs$' {
                         $json = @{
-                            logs        = @($SharedState.LogMessages)
-                            isDeploying = [bool]$SharedState.IsDeploying
+                            logs          = @($SharedState.LogMessages)
+                            isDeploying   = [bool]$SharedState.IsDeploying
+                            statusMessage = $SharedState.StatusMessage
                         } | ConvertTo-Json
                         Send-HttpResponse -Context $context -Content $json -ContentType 'application/json'
                     }
@@ -716,7 +725,7 @@ function Invoke-SCCMDeployment {
     }
 
     function Invoke-Step {
-        param([string]$Name, [scriptblock]$Script, [switch]$ContinueOnError, [int]$MaxRetries = 3)
+        param([string]$Name, [scriptblock]$Script, [switch]$ContinueOnError, [int]$MaxRetries = 10)
         Write-Log -Message $Name -Level 'Step'
         $attempt = 0
         while ($true) {
@@ -730,13 +739,16 @@ function Invoke-SCCMDeployment {
                 } else {
                     $null = & $Script
                 }
+                $SharedState.StatusMessage = ''
                 Write-Log -Message "$Name completed." -Level 'Success'
                 return
             } catch [System.ArgumentNullException] {
                 if ($attempt -lt $MaxRetries) {
-                    Write-Log -Message "SMS Provider connectivity error on '$Name' (attempt $attempt/$MaxRetries) — retrying in 2s..." -Level 'Warning'
+                    $SharedState.StatusMessage = "Retrying ($attempt/$MaxRetries)..."
+                    Write-Log -Message "SMS Provider connectivity error — retrying '$Name' ($attempt/$MaxRetries) in 2s..." -Level 'Warning'
                     Start-Sleep -Seconds 2
                 } else {
+                    $SharedState.StatusMessage = ''
                     Write-Log -Message "$Name failed." -Level 'Error'
                     Write-Log -Message "Error: $_" -Level 'Error'
                     if ($_.Exception.InnerException) {
@@ -746,6 +758,7 @@ function Invoke-SCCMDeployment {
                     return
                 }
             } catch {
+                $SharedState.StatusMessage = ''
                 Write-Log -Message "$Name failed." -Level 'Error'
                 Write-Log -Message "Error: $_" -Level 'Error'
                 if ($_.Exception.InnerException) {
