@@ -716,25 +716,44 @@ function Invoke-SCCMDeployment {
     }
 
     function Invoke-Step {
-        param([string]$Name, [scriptblock]$Script, [switch]$ContinueOnError)
+        param([string]$Name, [scriptblock]$Script, [switch]$ContinueOnError, [int]$MaxRetries = 3)
         Write-Log -Message $Name -Level 'Step'
-        try {
-            if ($VerboseLogging) {
-                $verboseOutput = & $Script 4>&1 3>&1 2>&1
-                foreach ($line in $verboseOutput) {
-                    if ($line) { Write-Log -Message "  [VERBOSE] $line" -Level 'Info' }
+        $attempt = 0
+        while ($true) {
+            $attempt++
+            try {
+                if ($VerboseLogging) {
+                    $verboseOutput = & $Script 4>&1 3>&1 2>&1
+                    foreach ($line in $verboseOutput) {
+                        if ($line) { Write-Log -Message "  [VERBOSE] $line" -Level 'Info' }
+                    }
+                } else {
+                    $null = & $Script
                 }
-            } else {
-                $null = & $Script
+                Write-Log -Message "$Name completed." -Level 'Success'
+                return
+            } catch [System.ArgumentNullException] {
+                if ($attempt -lt $MaxRetries) {
+                    Write-Log -Message "SMS Provider connectivity error on '$Name' (attempt $attempt/$MaxRetries) — retrying in 2s..." -Level 'Warning'
+                    Start-Sleep -Seconds 2
+                } else {
+                    Write-Log -Message "$Name failed." -Level 'Error'
+                    Write-Log -Message "Error: $_" -Level 'Error'
+                    if ($_.Exception.InnerException) {
+                        Write-Log -Message "InnerException: $($_.Exception.InnerException)" -Level 'Error'
+                    }
+                    if (-not $ContinueOnError) { throw }
+                    return
+                }
+            } catch {
+                Write-Log -Message "$Name failed." -Level 'Error'
+                Write-Log -Message "Error: $_" -Level 'Error'
+                if ($_.Exception.InnerException) {
+                    Write-Log -Message "InnerException: $($_.Exception.InnerException)" -Level 'Error'
+                }
+                if (-not $ContinueOnError) { throw }
+                return
             }
-            Write-Log -Message "$Name completed." -Level 'Success'
-        } catch {
-            Write-Log -Message "$Name failed." -Level 'Error'
-            Write-Log -Message "Error: $_" -Level 'Error'
-            if ($_.Exception.InnerException) {
-                Write-Log -Message "InnerException: $($_.Exception.InnerException)" -Level 'Error'
-            }
-            if (-not $ContinueOnError) { throw }
         }
     }
 
