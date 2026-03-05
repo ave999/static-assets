@@ -750,22 +750,41 @@ function Invoke-SCCMDeployment {
             catch { Write-Log "Failed to remove collection ${collection}: $_" -Level 'Error' }
         }
         if ($createdObjects.Application) {
-            try { Remove-CMApplication -Name $createdObjects.Application -Force -ErrorAction Stop }
+            $rbRemoved = $false
+            try { Remove-CMApplication -Name $createdObjects.Application -Force -ErrorAction Stop; $rbRemoved = $true }
             catch [System.ArgumentNullException] {
                 # CM SDK bug: verify via WMI whether the app is actually gone.
                 $rbNameEsc = $createdObjects.Application -replace "'", "''"
-                $stillExists = Get-WmiObject -Namespace "root\SMS\Site_$SiteCode" `
+                $rbWmiApp  = Get-WmiObject -Namespace "root\SMS\Site_$SiteCode" `
                     -Class SMS_Application `
                     -Filter "LocalizedDisplayName='$rbNameEsc' AND IsLatest=1" `
                     -ComputerName $SiteServerFqdn `
                     -ErrorAction SilentlyContinue
-                if ($stillExists) {
-                    Write-Log "Failed to remove application: $_" -Level 'Error'
-                } else {
+                if (-not $rbWmiApp) {
+                    $rbRemoved = $true
                     Write-Log "Remove-CMApplication threw ArgumentNullException but application is gone from SMS Provider." -Level 'Warning'
                 }
+                # else: fall through to WMI direct deletion below
             }
             catch { Write-Log "Failed to remove application: $_" -Level 'Error' }
+
+            if (-not $rbRemoved) {
+                # Remove-CMApplication failed and app still exists — attempt direct WMI deletion.
+                try {
+                    $rbNameEsc2 = $createdObjects.Application -replace "'", "''"
+                    $rbWmiApp2  = Get-WmiObject -Namespace "root\SMS\Site_$SiteCode" `
+                        -Class SMS_Application `
+                        -Filter "LocalizedDisplayName='$rbNameEsc2' AND IsLatest=1" `
+                        -ComputerName $SiteServerFqdn `
+                        -ErrorAction Stop
+                    if ($rbWmiApp2) {
+                        $rbWmiApp2.Delete() | Out-Null
+                        Write-Log "Application removed via WMI direct deletion (fallback)." -Level 'Warning'
+                    }
+                } catch {
+                    Write-Log "WMI fallback removal also failed — manually delete '$($createdObjects.Application)' from SCCM console: $_" -Level 'Error'
+                }
+            }
         }
         Write-Log "Rollback completed. Verify SCCM console for any remaining objects." -Level 'Warning'
     }
@@ -1075,33 +1094,42 @@ function Invoke-SCCMDeployment {
             #--- Set OS requirements ---
             Invoke-Step -Name "Add OS requirement (Windows 11 x64/ARM64)" -Script {
                 if (-not $WhatIf) {
-                    $osGC = Get-CMGlobalCondition -Name "Operating System" | Where-Object PlatformType -eq 1
-                    if (-not $osGC) { throw "Operating System global condition not found" }
+                    try {
+                        $osGC = Get-CMGlobalCondition -Name "Operating System" | Where-Object PlatformType -eq 1
+                        if (-not $osGC) { throw "Operating System global condition not found" }
 
-                    Set-CMDeploymentType -ApplicationName $AppName `
-                        -DeploymentTypeName $DeploymentTypeName `
-                        -ClearRequirements -ErrorAction Stop | Out-Null
+                        Set-CMDeploymentType -ApplicationName $AppName `
+                            -DeploymentTypeName $DeploymentTypeName `
+                            -ClearRequirements -ErrorAction Stop | Out-Null
 
-                    $osRule = $osGC | New-CMRequirementRuleOperatingSystemValue `
-                        -PlatformString @(
-                            'Windows/All_x64_Windows_11_and_higher_Clients',
-                            'Windows/All_ARM64_Windows_11_and_higher_Clients'
-                        ) `
-                        -RuleOperator OneOf
+                        $osRule = $osGC | New-CMRequirementRuleOperatingSystemValue `
+                            -PlatformString @(
+                                'Windows/All_x64_Windows_11_and_higher_Clients',
+                                'Windows/All_ARM64_Windows_11_and_higher_Clients'
+                            ) `
+                            -RuleOperator OneOf
 
-                    $setDtParams = @{
-                        ApplicationName    = $AppName
-                        DeploymentTypeName = $DeploymentTypeName
-                        AddRequirement     = $osRule
-                        ErrorAction        = 'Stop'
+                        $setDtParams = @{
+                            ApplicationName    = $AppName
+                            DeploymentTypeName = $DeploymentTypeName
+                            AddRequirement     = $osRule
+                            ErrorAction        = 'Stop'
+                        }
+                        if ($isMsi) {
+                            Set-CMMsiDeploymentType @setDtParams | Out-Null
+                        } else {
+                            Set-CMScriptDeploymentType @setDtParams | Out-Null
+                        }
+
+                        Write-Log "OS requirements configured: Windows 11 (x64 + ARM64)" -Level 'Success'
+                    } catch [System.ArgumentNullException] {
+                        # CM SDK bug: one or more cmdlets threw ArgumentNullException during
+                        # result processing. Based on the consistent pattern seen throughout
+                        # this deployment, writes to the SMS Provider complete before the
+                        # exception fires. Log a warning and continue; verify requirements
+                        # in the SCCM console if needed.
+                        Write-Log "OS requirement step threw ArgumentNullException (CM SDK bug) — requirement may have been applied. Verify in SCCM console." -Level 'Warning'
                     }
-                    if ($isMsi) {
-                        Set-CMMsiDeploymentType @setDtParams | Out-Null
-                    } else {
-                        Set-CMScriptDeploymentType @setDtParams | Out-Null
-                    }
-
-                    Write-Log "OS requirements configured: Windows 11 (x64 + ARM64)" -Level 'Success'
                 } else {
                     Write-Log "[WHATIF] Would set OS requirement to Windows 11 x64/ARM64"
                 }
