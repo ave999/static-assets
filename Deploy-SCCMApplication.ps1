@@ -742,8 +742,12 @@ function Invoke-SCCMDeployment {
                 $SharedState.StatusMessage = ''
                 Write-Log -Message "$Name completed." -Level 'Success'
                 return
-            } catch [System.ArgumentNullException] {
-                if ($attempt -lt $MaxRetries) {
+            } catch {
+                $ex = $_.Exception
+                $isRetryable = ($ex -is [System.ArgumentNullException]) -or
+                               ($ex -is [System.Management.ManagementException]) -or
+                               ($ex.InnerException -is [System.Management.ManagementException])
+                if ($isRetryable -and $attempt -lt $MaxRetries) {
                     $SharedState.StatusMessage = "Retrying ($attempt/$MaxRetries)..."
                     Write-Log -Message "SMS Provider connectivity error — retrying '$Name' ($attempt/$MaxRetries) in 2s..." -Level 'Warning'
                     Start-Sleep -Seconds 2
@@ -751,21 +755,12 @@ function Invoke-SCCMDeployment {
                     $SharedState.StatusMessage = ''
                     Write-Log -Message "$Name failed." -Level 'Error'
                     Write-Log -Message "Error: $_" -Level 'Error'
-                    if ($_.Exception.InnerException) {
-                        Write-Log -Message "InnerException: $($_.Exception.InnerException)" -Level 'Error'
+                    if ($ex.InnerException) {
+                        Write-Log -Message "InnerException: $($ex.InnerException)" -Level 'Error'
                     }
                     if (-not $ContinueOnError) { throw }
                     return
                 }
-            } catch {
-                $SharedState.StatusMessage = ''
-                Write-Log -Message "$Name failed." -Level 'Error'
-                Write-Log -Message "Error: $_" -Level 'Error'
-                if ($_.Exception.InnerException) {
-                    Write-Log -Message "InnerException: $($_.Exception.InnerException)" -Level 'Error'
-                }
-                if (-not $ContinueOnError) { throw }
-                return
             }
         }
     }
