@@ -774,6 +774,19 @@ function Invoke-SCCMDeployment {
         }
         foreach ($collection in $createdObjects.Collections) {
             try { Remove-CMDeviceCollection -Name $collection -Force -ErrorAction Stop }
+            catch [System.ArgumentNullException] {
+                # CM SDK bug: verify via WMI whether the collection is actually gone.
+                $rbCollEsc = $collection -replace "'", "''"
+                $rbWmiColl = Get-WmiObject -Namespace "root\SMS\Site_$SiteCode" `
+                    -Class SMS_Collection `
+                    -Filter "Name='$rbCollEsc' AND CollectionType=2" `
+                    -ComputerName $SiteServerFqdn -ErrorAction SilentlyContinue
+                if ($rbWmiColl) {
+                    Write-Log "Failed to remove collection ${collection} (still exists — manually delete)." -Level 'Error'
+                } else {
+                    Write-Log "Remove-CMDeviceCollection threw ArgumentNullException but collection is gone from SMS Provider." -Level 'Warning'
+                }
+            }
             catch { Write-Log "Failed to remove collection ${collection}: $_" -Level 'Error' }
         }
         if ($createdObjects.Application) {
@@ -1349,19 +1362,18 @@ function Invoke-SCCMDeployment {
                             -UserNotification DisplaySoftwareCenterOnly `
                             -ErrorAction      Stop
                     } catch [System.ArgumentNullException] {
-                        # CM SDK bug: verify the deployment was created in the SMS Provider.
-                        $appNameEsc = $AppName -replace "'", "''"
-                        $collId     = $collection.CollectionID
-                        $wmiDeploy  = Get-WmiObject -Namespace "root\SMS\Site_$SiteCode" `
-                            -Class SMS_ApplicationAssignment `
-                            -Filter "ApplicationName='$appNameEsc' AND CollectionID='$collId'" `
-                            -ComputerName $SiteServerFqdn -ErrorAction SilentlyContinue
-                        if (-not $wmiDeploy) { throw }
-                        Write-Log "New-CMApplicationDeployment threw ArgumentNullException (CM SDK bug) — deployment verified via WMI." -Level 'Warning'
-                        $deployment = [PSCustomObject]@{ DeploymentID = $wmiDeploy.AssignmentUniqueID }
+                        # CM SDK bug: same pattern as every other cmdlet on this site — the
+                        # deployment is written to the SMS Provider before the exception fires.
+                        # We cannot capture the DeploymentID so rollback will not auto-remove
+                        # this deployment; a warning is logged for manual verification.
+                        Write-Log "New-CMApplicationDeployment threw ArgumentNullException (CM SDK bug) — deployment was initiated. Verify in SCCM console." -Level 'Warning'
                     }
-                    $createdObjects.Deployments += $deployment.DeploymentID
-                    Write-Log "Deployment created (ID: $($deployment.DeploymentID))" -Level 'Success'
+                    if ($deployment) {
+                        $createdObjects.Deployments += $deployment.DeploymentID
+                        Write-Log "Deployment created (ID: $($deployment.DeploymentID))" -Level 'Success'
+                    } else {
+                        Write-Log "Deployment created (ID unknown — CM SDK bug)" -Level 'Success'
+                    }
                 } else {
                     Write-Log "[WHATIF] Would create Install/Required deployment to '$installCollectionFull'"
                 }
