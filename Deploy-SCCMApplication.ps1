@@ -1197,23 +1197,53 @@ function Invoke-SCCMDeployment {
 
             #--- Create install collection ---
             Invoke-Step -Name "Create device collection '$InstallCollectionName-UAT'" -Script {
-                $limiter = Get-CMDeviceCollection -Name '__PACKAGING_ROOT_COLLECTION' -ErrorAction SilentlyContinue
+                $limiter = $null
+                try {
+                    $limiter = Get-CMDeviceCollection -Name '__PACKAGING_ROOT_COLLECTION' -ErrorAction SilentlyContinue
+                } catch [System.ArgumentNullException] {
+                    $limiter = Get-WmiObject -Namespace "root\SMS\Site_$SiteCode" -Class SMS_Collection `
+                        -Filter "Name='__PACKAGING_ROOT_COLLECTION' AND CollectionType=2" `
+                        -ComputerName $SiteServerFqdn -ErrorAction SilentlyContinue
+                    if ($limiter) { Write-Log "Get-CMDeviceCollection threw ArgumentNullException — limiter verified via WMI." -Level 'Warning' }
+                }
                 if (-not $limiter) { throw "Limiting collection '__PACKAGING_ROOT_COLLECTION' not found." }
 
                 $collectionName = "$InstallCollectionName-UAT"
-                $existing = Get-CMDeviceCollection -Name $collectionName -ErrorAction SilentlyContinue
+                $existing = $null
+                try {
+                    $existing = Get-CMDeviceCollection -Name $collectionName -ErrorAction SilentlyContinue
+                } catch [System.ArgumentNullException] {
+                    # CM SDK bug: treat as not found and attempt creation
+                }
                 if (-not $existing) {
                     if (-not $WhatIf) {
-                        New-CMDeviceCollection -Name $collectionName `
-                            -LimitingCollectionId $limiter.CollectionID `
-                            -Comment '~~UAT~~' -ErrorAction Stop | Out-Null
+                        try {
+                            New-CMDeviceCollection -Name $collectionName `
+                                -LimitingCollectionId $limiter.CollectionID `
+                                -Comment '~~UAT~~' -ErrorAction Stop | Out-Null
+                        } catch [System.ArgumentNullException] {
+                            $collNameEsc = $collectionName -replace "'", "''"
+                            $wmiColl = Get-WmiObject -Namespace "root\SMS\Site_$SiteCode" -Class SMS_Collection `
+                                -Filter "Name='$collNameEsc' AND CollectionType=2" `
+                                -ComputerName $SiteServerFqdn -ErrorAction SilentlyContinue
+                            if (-not $wmiColl) { throw }
+                            Write-Log "New-CMDeviceCollection threw ArgumentNullException but collection was created in SMS Provider — continuing." -Level 'Warning'
+                        }
                         Write-Log "Collection created, waiting for provider replication..."
                         $timeout    = [datetime]::UtcNow.AddMinutes($CollectionCreationTimeoutMinutes)
                         $retryCount = 0
                         do {
                             Start-Sleep -Seconds 3
                             $retryCount++
-                            $existing = Get-CMDeviceCollection -Name $collectionName -ErrorAction SilentlyContinue
+                            $existing = $null
+                            try {
+                                $existing = Get-CMDeviceCollection -Name $collectionName -ErrorAction SilentlyContinue
+                            } catch [System.ArgumentNullException] {
+                                $collNameEsc2 = $collectionName -replace "'", "''"
+                                $existing = Get-WmiObject -Namespace "root\SMS\Site_$SiteCode" -Class SMS_Collection `
+                                    -Filter "Name='$collNameEsc2' AND CollectionType=2" `
+                                    -ComputerName $SiteServerFqdn -ErrorAction SilentlyContinue
+                            }
                             if ($existing) { Write-Log "Collection verified after $retryCount attempt(s)" -Level 'Success'; break }
                             if ([datetime]::UtcNow -gt $timeout) { throw "Collection creation timed out." }
                         } while (-not $existing)
@@ -1228,23 +1258,53 @@ function Invoke-SCCMDeployment {
 
             #--- Create uninstall collection ---
             Invoke-Step -Name "Create device collection '$UninstallCollectionName-UAT'" -Script {
-                $limiter = Get-CMDeviceCollection -Name '__PACKAGING_ROOT_COLLECTION' -ErrorAction SilentlyContinue
+                $limiter = $null
+                try {
+                    $limiter = Get-CMDeviceCollection -Name '__PACKAGING_ROOT_COLLECTION' -ErrorAction SilentlyContinue
+                } catch [System.ArgumentNullException] {
+                    $limiter = Get-WmiObject -Namespace "root\SMS\Site_$SiteCode" -Class SMS_Collection `
+                        -Filter "Name='__PACKAGING_ROOT_COLLECTION' AND CollectionType=2" `
+                        -ComputerName $SiteServerFqdn -ErrorAction SilentlyContinue
+                    if ($limiter) { Write-Log "Get-CMDeviceCollection threw ArgumentNullException — limiter verified via WMI." -Level 'Warning' }
+                }
                 if (-not $limiter) { throw "Limiting collection '__PACKAGING_ROOT_COLLECTION' not found." }
 
                 $collectionName = "$UninstallCollectionName-UAT"
-                $existing = Get-CMDeviceCollection -Name $collectionName -ErrorAction SilentlyContinue
+                $existing = $null
+                try {
+                    $existing = Get-CMDeviceCollection -Name $collectionName -ErrorAction SilentlyContinue
+                } catch [System.ArgumentNullException] {
+                    # CM SDK bug: treat as not found and attempt creation
+                }
                 if (-not $existing) {
                     if (-not $WhatIf) {
-                        New-CMDeviceCollection -Name $collectionName `
-                            -LimitingCollectionId $limiter.CollectionID `
-                            -Comment '~~UAT~~' -ErrorAction Stop | Out-Null
+                        try {
+                            New-CMDeviceCollection -Name $collectionName `
+                                -LimitingCollectionId $limiter.CollectionID `
+                                -Comment '~~UAT~~' -ErrorAction Stop | Out-Null
+                        } catch [System.ArgumentNullException] {
+                            $collNameEsc = $collectionName -replace "'", "''"
+                            $wmiColl = Get-WmiObject -Namespace "root\SMS\Site_$SiteCode" -Class SMS_Collection `
+                                -Filter "Name='$collNameEsc' AND CollectionType=2" `
+                                -ComputerName $SiteServerFqdn -ErrorAction SilentlyContinue
+                            if (-not $wmiColl) { throw }
+                            Write-Log "New-CMDeviceCollection threw ArgumentNullException but collection was created in SMS Provider — continuing." -Level 'Warning'
+                        }
                         Write-Log "Collection created, waiting for provider replication..."
                         $timeout    = [datetime]::UtcNow.AddMinutes($CollectionCreationTimeoutMinutes)
                         $retryCount = 0
                         do {
                             Start-Sleep -Seconds 3
                             $retryCount++
-                            $existing = Get-CMDeviceCollection -Name $collectionName -ErrorAction SilentlyContinue
+                            $existing = $null
+                            try {
+                                $existing = Get-CMDeviceCollection -Name $collectionName -ErrorAction SilentlyContinue
+                            } catch [System.ArgumentNullException] {
+                                $collNameEsc2 = $collectionName -replace "'", "''"
+                                $existing = Get-WmiObject -Namespace "root\SMS\Site_$SiteCode" -Class SMS_Collection `
+                                    -Filter "Name='$collNameEsc2' AND CollectionType=2" `
+                                    -ComputerName $SiteServerFqdn -ErrorAction SilentlyContinue
+                            }
                             if ($existing) { Write-Log "Collection verified after $retryCount attempt(s)" -Level 'Success'; break }
                             if ([datetime]::UtcNow -gt $timeout) { throw "Collection creation timed out." }
                         } while (-not $existing)
@@ -1253,7 +1313,7 @@ function Invoke-SCCMDeployment {
                         Write-Log "[WHATIF] Would create device collection '$collectionName'"
                     }
                 } else {
-                    Write-Log "Collection '$UninstallCollectionName' already exists"
+                    Write-Log "Collection '$collectionName' already exists"
                 }
             }
 
@@ -1262,7 +1322,15 @@ function Invoke-SCCMDeployment {
             Invoke-Step -Name "Deploy '$AppName' to '$installCollectionFull' (Install / Required)" -Script {
                 $retries = 0; $maxRetries = 10; $collection = $null
                 do {
-                    $collection = Get-CMDeviceCollection -Name $installCollectionFull -ErrorAction SilentlyContinue
+                    $collection = $null
+                    try {
+                        $collection = Get-CMDeviceCollection -Name $installCollectionFull -ErrorAction SilentlyContinue
+                    } catch [System.ArgumentNullException] {
+                        $collNameEsc = $installCollectionFull -replace "'", "''"
+                        $collection = Get-WmiObject -Namespace "root\SMS\Site_$SiteCode" -Class SMS_Collection `
+                            -Filter "Name='$collNameEsc' AND CollectionType=2" `
+                            -ComputerName $SiteServerFqdn -ErrorAction SilentlyContinue
+                    }
                     if ($collection) { break }
                     if ($retries -gt 0) { Write-Log "Waiting for collection replication... (attempt $retries/$maxRetries)"; Start-Sleep -Seconds 5 }
                     $retries++
@@ -1271,13 +1339,27 @@ function Invoke-SCCMDeployment {
                 if (-not $collection -and -not $WhatIf) { throw "Collection '$installCollectionFull' not found after $maxRetries retries." }
 
                 if (-not $WhatIf) {
-                    $deployment = New-CMApplicationDeployment `
-                        -ApplicationName  $AppName `
-                        -CollectionId     $collection.CollectionID `
-                        -DeployAction     Install `
-                        -DeployPurpose    Required `
-                        -UserNotification DisplaySoftwareCenterOnly `
-                        -ErrorAction      Stop
+                    $deployment = $null
+                    try {
+                        $deployment = New-CMApplicationDeployment `
+                            -ApplicationName  $AppName `
+                            -CollectionId     $collection.CollectionID `
+                            -DeployAction     Install `
+                            -DeployPurpose    Required `
+                            -UserNotification DisplaySoftwareCenterOnly `
+                            -ErrorAction      Stop
+                    } catch [System.ArgumentNullException] {
+                        # CM SDK bug: verify the deployment was created in the SMS Provider.
+                        $appNameEsc = $AppName -replace "'", "''"
+                        $collId     = $collection.CollectionID
+                        $wmiDeploy  = Get-WmiObject -Namespace "root\SMS\Site_$SiteCode" `
+                            -Class SMS_ApplicationAssignment `
+                            -Filter "ApplicationName='$appNameEsc' AND CollectionID='$collId'" `
+                            -ComputerName $SiteServerFqdn -ErrorAction SilentlyContinue
+                        if (-not $wmiDeploy) { throw }
+                        Write-Log "New-CMApplicationDeployment threw ArgumentNullException (CM SDK bug) — deployment verified via WMI." -Level 'Warning'
+                        $deployment = [PSCustomObject]@{ DeploymentID = $wmiDeploy.AssignmentUniqueID }
+                    }
                     $createdObjects.Deployments += $deployment.DeploymentID
                     Write-Log "Deployment created (ID: $($deployment.DeploymentID))" -Level 'Success'
                 } else {
@@ -1290,8 +1372,18 @@ function Invoke-SCCMDeployment {
                 Invoke-Step -Name "Move application to folder '$ApplicationFolder'" -Script {
                     $fullPath = "${SiteCode}:\Application\${ApplicationFolder}"
                     if (-not $WhatIf) {
-                        $app = Get-CMApplication -Name $AppName -ErrorAction Stop
-                        Move-CMObject -FolderPath $fullPath -InputObject $app -ErrorAction Stop
+                        $app = $null
+                        try {
+                            $app = Get-CMApplication -Name $AppName -ErrorAction Stop
+                        } catch [System.ArgumentNullException] {
+                            Write-Log "Get-CMApplication threw ArgumentNullException (CM SDK bug) — skipping folder move for application. Verify in SCCM console." -Level 'Warning'
+                            return
+                        }
+                        try {
+                            Move-CMObject -FolderPath $fullPath -InputObject $app -ErrorAction Stop
+                        } catch [System.ArgumentNullException] {
+                            Write-Log "Move-CMObject threw ArgumentNullException (CM SDK bug) — folder move may have completed. Verify in SCCM console." -Level 'Warning'
+                        }
                     } else {
                         Write-Log "[WHATIF] Would move application to '$fullPath'"
                     }
@@ -1303,9 +1395,19 @@ function Invoke-SCCMDeployment {
                     $fullPath = "${SiteCode}:\DeviceCollection\${CollectionFolder}"
                     foreach ($collName in @("$InstallCollectionName-UAT", "$UninstallCollectionName-UAT")) {
                         if (-not $WhatIf) {
-                            $coll = Get-CMDeviceCollection -Name $collName -ErrorAction Stop
-                            Move-CMObject -FolderPath $fullPath -InputObject $coll -ErrorAction Stop
-                            Write-Log "Moved collection: $collName"
+                            $coll = $null
+                            try {
+                                $coll = Get-CMDeviceCollection -Name $collName -ErrorAction Stop
+                            } catch [System.ArgumentNullException] {
+                                Write-Log "Get-CMDeviceCollection threw ArgumentNullException (CM SDK bug) — skipping folder move for '$collName'. Verify in SCCM console." -Level 'Warning'
+                                continue
+                            }
+                            try {
+                                Move-CMObject -FolderPath $fullPath -InputObject $coll -ErrorAction Stop
+                                Write-Log "Moved collection: $collName"
+                            } catch [System.ArgumentNullException] {
+                                Write-Log "Move-CMObject threw ArgumentNullException (CM SDK bug) — move may have completed for '$collName'. Verify in SCCM console." -Level 'Warning'
+                            }
                         } else {
                             Write-Log "[WHATIF] Would move collection '$collName' to '$fullPath'"
                         }
